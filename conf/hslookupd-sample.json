@@ -1,0 +1,12 @@
+{
+  "api_url": "http://127.0.0.1:7776",
+  "sync_interval": 60,
+  "sync_on_changes": True,
+  "sleep_interval": 0.1,
+  "tuya_opts": {
+    "host": "0.0.0.0",
+    "port": 6667,
+    "udp_key": "y==dl==oPV==AB==",
+    "unseen_timeout", 86400
+  }
+}

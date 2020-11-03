@@ -6,21 +6,17 @@ See: https://github.com/davidfoliveira/homeswitch-api
 import os
 
 from setuptools import setup
-try:  # for pip >= 10
-    from pip._internal.req import parse_requirements
-    from pip._internal.download import PipSession
-except ImportError:  # for pip <= 9.0.3
-    from pip.download import PipSession
-    from pip.req import parse_requirements
+from pip._internal.req import parse_requirements
+from pip._internal.network.session import PipSession
 
 
 def get_requirements():
     """Parse requirements from requirements.txt."""
     parsed_requirements = parse_requirements(
         'requirements.txt',
-        session=PipSession()
+        session=PipSession(),
     )
-    return [str(ir.req) for ir in parsed_requirements if ir.req is not None]
+    return [str(ir.requirement) for ir in parsed_requirements if ir.requirement is not None]
 
 
 with open("README.md", "r") as fh:
@@ -35,18 +31,18 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/davidfoliveira/homeswitch-api",
-    packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 2",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
     python_requires='>=2.7',
-    packages=['homeswitch-api'],
+    packages=['homeswitch'],
     install_requires=get_requirements(),
     entry_points={
         'console_scripts': [
-            'homeswitchd=homeswitch.api:main',
+            'hsapid=homeswitch.api:main',
+            'hslookupd=homeswitch.devices:main',
         ],
     },
 )

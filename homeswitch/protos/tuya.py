@@ -87,7 +87,7 @@ class TuyaDeviceListener(EventEmitter):
         self.unseen_timeout = unseen_timeout
         self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         self.socket.setblocking(0)
-        self.cipher = AESCipher(UDP_KEY)
+        self.cipher = AESCipher(self.key)
         self.devices = {}
         self.device_last_seen = {}
 

@@ -5,8 +5,11 @@ import os
 from time import sleep, time
 import threading
 
+import requests
+
 from .hw.tuya import TuyaDeviceListener
 from .util import debug
+
 
 
 class DeviceListener(EventEmitter):
@@ -86,7 +89,7 @@ class DeviceListener(EventEmitter):
         if not self.sync_on_changes:
             url = self.api_url + "/api/device/discovery"
             try:
-                res = requests.post(url, data = {'new': {'id': id, 'data': message}})
+                res = requests.post(url, json = {'new': {'id': id, 'data': message}})
             except Exception as e:
                 debug("ERRO", "Failed to call homeswitch-api at {}: {}".format(url, e))
                 return
@@ -100,7 +103,7 @@ class DeviceListener(EventEmitter):
         if not self.sync_on_changes:
             url = self.api_url + "/api/device/discovery"
             try:
-                res = requests.post(url, data = {'lost': {'id': id}})
+                res = requests.post(url, json = {'lost': {'id': id}})
             except Exception as e:
                 debug("ERRO", "Failed to call homeswitch-api at {}: {}".format(url, e))
                 return
@@ -113,7 +116,7 @@ class DeviceListener(EventEmitter):
 
         url = self.api_url + "/api/device/sync"
         try:
-            res = requests.post(url, data = self.get_devices())
+            res = requests.post(url, json = self.get_devices())
         except Exception as e:
             debug("ERRO", "Failed to call homeswitch-api at {}: {}".format(url, e))
             return

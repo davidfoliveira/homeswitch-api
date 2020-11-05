@@ -10,11 +10,13 @@ from .util import debug, readUInt32BE, writeUInt32BE
 
 HTTP_STATUS_BY_ERROR = {
     'request_error': 400,
+    'not_found': 404,
 }
 
 HTTP_STATUS_DESCRIPTION = {
     '200': 'OK',
     '400': 'Invalid request',
+    '404': 'Not Found',
 }
 
 class HybridServer(asyncore.dispatcher, EventEmitter):
@@ -103,7 +105,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
 
     def send_http(self, status, body):
         raw_body = json.dumps(body)
-        response  = "HTTP/1.0 {} {}\r\n".format(status, HTTP_STATUS_DESCRIPTION[status])
+        response  = "HTTP/1.0 {} {}\r\n".format(status, HTTP_STATUS_DESCRIPTION[str(status)])
         response += "Content-type: application/json\r\n"
         response += "Content-length: {}\r\n".format(len(raw_body))
         response += "\r\n"
@@ -154,25 +156,27 @@ class HomeSwitchRequest(EventEmitter):
 
 
 
-class HTTPRequest(object):
+class HTTPRequest(EventEmitter):
     def __init__(self, method=None, url=None, http_version=None, headers={}, raw_request=None):
+        super(HTTPRequest, self).__init__()
         self.proto = "http"
-        self.raw_request = raw_request
+        self.raw_request = ''
         self.method = None
         self.url = None
         self.http_version = None
         self.headers = headers
         self.post_data = None
-        if raw_request:
+#        if raw_request:
+#            self._eat_raw_request()
+
+    def push_data(self, data):
+        self.raw_request += data
+        # FIXME: this is a massive temporary hack. It should support stream parsing
+        if len(self.raw_request) > 10:
             self._eat_raw_request()
 
-
     def _eat_raw_request(self):
-        try:
-            req_sep = self.raw_request.index("\r\n\r\n")
-        except ValueError:
-            return
-
+        print("ALL: ", self.raw_request)
         line_num = 0
         last_crlf = 0
         while True:
@@ -194,15 +198,23 @@ class HTTPRequest(object):
                 self.http_version = m.group(3)
             elif line == "":
                 # End of request headers
-                return self._eat_request_body(last_crlf + 2)
+                return self._eat_request_body(last_crlf)
             else:
                 m = re.search('^([\w-]+)\s*:\s*(.*?)\s*$', line)
                 if m:
-                    self.headers[m.group(1)] = m.group(2)
+                    self.headers[m.group(1).lower()] = m.group(2)
 
             line_num += 1
 
     def _eat_request_body(self, pos):
         if len(self.raw_request) > pos:
             self.post_data = self.raw_request[pos:]
+            debug("DBUG", "POST: ", self.post_data)
+            if self.headers.get('content-type') != 'application/json':
+                return self.emit('error')
+            try:
+                self.post_data = json.loads(self.post_data)
+            except Exception:
+                return self.emit('error')
 
+        self.emit('ready')

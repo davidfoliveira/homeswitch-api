@@ -19,6 +19,13 @@ def readUInt32BE(data, idx):
     return struct.unpack('>i', data[idx:idx + 4])[0]
 
 
+def writeUInt32BE(data, idx, value):
+    bin_value = struct.pack('>i', value)
+    for i in range(0, 4):
+        data[idx+i] = bin_value[i]
+    return bin_value
+
+
 def debug(type, pattern, *args):
     pattern = '{}: [{}] ' + pattern
     for arg in args:

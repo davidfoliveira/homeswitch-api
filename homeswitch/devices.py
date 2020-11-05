@@ -1,11 +1,11 @@
 import json
 from pymitter import EventEmitter
 import os
-import requests
+#import requests
 from time import sleep, time
 import threading
 
-from .protos.tuya import TuyaDeviceListener
+from .hw.tuya import TuyaDeviceListener
 from .util import debug
 
 

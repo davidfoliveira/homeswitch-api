@@ -141,6 +141,7 @@ class HomeSwitchRequest(EventEmitter):
                     self.raw_request = ""
                     if len(self._raw_body) >= self.size:
                         self._eating_stage = "done"
+                        print("RB: ", self._raw_body)
                         self.body = json.loads(self._raw_body)
                         self.method = self.body.get('method')
                         if not self.method:
@@ -185,7 +186,7 @@ class HTTPRequest(EventEmitter):
             except ValueError:
                 return
             line = self.raw_request[last_crlf:eol]
-            debug("DBUG", "Line:", line)
+#            debug("DBUG", "Line:", line)
             last_crlf = eol + 2
 
             # Request line
@@ -209,7 +210,7 @@ class HTTPRequest(EventEmitter):
     def _eat_request_body(self, pos):
         if len(self.raw_request) > pos:
             self.post_data = self.raw_request[pos:]
-            debug("DBUG", "POST: ", self.post_data)
+#            debug("DBUG", "POST: ", self.post_data)
             if self.headers.get('content-type') != 'application/json':
                 return self.emit('error')
             try:

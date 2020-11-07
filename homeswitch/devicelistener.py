@@ -17,21 +17,25 @@ class DeviceListener(EventEmitter):
         self.running = False
         self.background_run = None
         self.last_sync = time()
+        self.device_types = kwargs.get('device_types', [])
         self.api_url = kwargs.get('api_url', 'http://127.0.0.1:7776')
         self.sync_interval = kwargs.get('sync_interval', 60)
         self.sync_on_changes = kwargs.get('sync_on_changes', True)
         self.sleep_interval = kwargs.get('sleep_interval', 0.1)
 
         # Create all the listeners
-        self.listeners = [
-            TuyaDeviceListener(**(kwargs.get('tuya_opts', {})))
-        ]
+        self.listeners = [ self._create_listener(hw_type, kwargs.get('{}_opts'.format(hw_type), {})) for hw_type in self.device_types ]
 
         # Attach events
         super(DeviceListener, self).__init__()
         for listener in self.listeners:
             listener.on('discover', lambda id, m: self._on_new_device(id, m))
             listener.on('lose', lambda id: self._on_lose_device(id))
+
+    def _create_listener(hw_type, opts={}):
+    def _import_device_module(self, hw, hw_metadata={}):
+        hw_module = import_module("homeswitch.hw.{}".format(hw))
+        return hw_module.DeviceListener(**hw_metadata)
 
     def start(self, background=False):
         if self.running:

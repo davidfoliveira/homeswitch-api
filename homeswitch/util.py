@@ -47,3 +47,7 @@ def dict_diff(a, b):
             diffs[key] = b.get(key, None)
 
     return diffs
+
+
+def DO_NOTHING(*args):
+    pass

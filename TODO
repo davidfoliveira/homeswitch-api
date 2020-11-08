@@ -1,7 +1,8 @@
 # TODO
 
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
+- Check why client gets disconnected when the targetted device is offline
 - In memory switch status support to avoid running a live get (run it periodically)
 - async.parallel()
-- Support for 1 command connections (no persistent connections)
+- Evaluate whether we should destroy the hardware module or not
 - Manage better handle_read() - instead of doing a while True: which will eventually timeout on a socket.read(), make it call the handle_read function over and over again to sinalise new data

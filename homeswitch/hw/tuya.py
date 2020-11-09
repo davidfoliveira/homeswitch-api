@@ -1,12 +1,13 @@
-import asyncore
 import base64
 import binascii
 from hashlib import md5
 import json
 import os
-import socket
-import time
 from pymitter import EventEmitter
+import socket
+import sys
+import time
+import traceback
 
 from ..asyncsocket.client import AsyncSocketClient
 from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, debug, dict_diff, DO_NOTHING
@@ -73,10 +74,8 @@ class AESCipher(object):
 
 
 
-class TuyaDevice(asyncore.dispatcher, EventEmitter):
+class TuyaDevice(EventEmitter):
     def __init__(self, id=None, config={}, hw_metadata={}):
-#        AsyncSocketClient.__init__(self)
-        asyncore.dispatcher.__init__(self)
         EventEmitter.__init__(self)
         self.id = id
         self.config = config
@@ -92,10 +91,19 @@ class TuyaDevice(asyncore.dispatcher, EventEmitter):
         self.gw_id = hw_metadata.get('gwId', None)
         self.dps = str(config.get('dps', 1))
         self.persistent_connections = config.get('persistent_connections', False)
-        self.get_status_on_start = config.get('get_status_on_start', True)
+#        self.get_status_on_start = config.get('get_status_on_start', True)
+
+        # Creates the connection object and sets event handlers
+        self.connection = AsyncSocketClient()
+        self.connection.on('connect', self._on_dev_connect)
+        self.connection.on('break', self._on_dev_connection_break)
+        self.connection.on('disconnect', self._on_dev_disconnect)
+        self.connection.on('exception', self._on_dev_exception)
+        self.connection.on('error', self._on_dev_error)
+        self.connection.on('data', self._on_dev_data)
+
         self.connected = False
         self.command_queue = []
-        self.fd = None
         self.buffer = bytearray()
 
         # When IP address changes
@@ -113,9 +121,9 @@ class TuyaDevice(asyncore.dispatcher, EventEmitter):
             if self.persistent_connections:
                 debug("INFO", "Connecting to the device as persistent_connections is ON")
                 self._connect()
-            elif self.get_status_on_start:
-                debug("INFO", "Getting device's status on start...")
-                self.get_status()
+#            elif self.get_status_on_start:
+#                debug("INFO", "Getting device's status on start...")
+#                self.get_status()
 
     def _on_can_send_next_command(self):
         debug("DBUG", "We can send next command for {}!!!".format(self.id))
@@ -123,7 +131,7 @@ class TuyaDevice(asyncore.dispatcher, EventEmitter):
             debug("DBUG", "Sending to {}...".format(self.id))
             if self.command_queue[0].get('status') == 'waiting':
                 bin_message = self._serialise_message(self.command_queue[0])
-                self.send(bin_message)
+                self.connection.send(bin_message)
                 self.command_queue[0]['status'] = 'sent'
             else:
                 debug("WARN", "I was told I can process the next queued item but the item is not in 'waiting' state")
@@ -176,53 +184,47 @@ class TuyaDevice(asyncore.dispatcher, EventEmitter):
     def _connect(self):
         debug("DBUG", "IP: {}, PORT: {}, GW_ID: {}, KEY: {}".format(self.ip, self.port, self.gw_id, self.key))
         if self.ip and self.port and self.gw_id and self.key:
-            self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(self.socket_timeout)
-            self.fd = self.socket.fileno()
             debug("INFO", "Connecting to device {} at {}:{}...".format(self.id, self.ip, self.port))
-            try:
-                self.connect((self.ip, self.port))
-            except Exception as ex:
-                debug("ERRO", "Error connecting to device {} at {}:{}: {}".format(self.id, self.ip, self.port, ex))
-                self._disconnect()
+#            try:
+            self.connection.connect(self.ip, self.port, timeout=self.socket_timeout)
+#            except Exception as ex:
+#                debug("ERRO", "Error connecting to device {} at {}:{}: {}".format(self.id, self.ip, self.port, ex))
+#                self._disconnect()
         else:
             debug("WARN", "Cannot connect because of not having an ip, port, device id or key")
 
     def _disconnect(self):
+        debug("INFO", "Disconnecting from device {}...".format(self.id))
         self.connected = False
-        if self.socket:
-            if self.connected:
-                debug("INFO", "Disconnecting from device {}...".format(self.id))
-            self.close()
+        self.connection.disconnect()
 
     def _reconnect(self):
         self._disconnect()
         self._connect()
 
-    def handle_connect(self):
+    def _on_dev_connect(self):
         debug("INFO", "Connected to device {} !".format(self.id))
         self.connected = True
         self.emit('_next')
 
-    def handle_close(self):
+    def _on_dev_connection_break(self):
+        debug("INFO", "Device {} has disconnected.".format(self.id))
         if self.connected:
-            debug("INFO", "Device {} has disconnected".format(self.id))
+            debug("INFO", "Reconnecting to {}...".format(self.id))
             self._reconnect()
-        else:
-            debug("INFO", "Successfully disconnected from device {}".format(self.id))
 
-    def handle_expt(self, ex):
+    def _on_dev_disconnect(self):
+        debug("INFO", "Successfully disconnected from device {}".format(self.id))
+
+    def _on_dev_exception(self, ex):
         debug("ERRO", "Socket exception on device's {} connection: {}".format(self.id, ex))
 
-    def handle_error(self):
-        import sys
-        import traceback
-        t, v, tb = sys.exc_info()
+    def _on_dev_error(self, t, v, tb):
         debug("ERRO", "Socket error on device's {} connection:".format(self.id), traceback.format_exception(*sys.exc_info()))
         self._disconnect()
 
-    def handle_read(self):
-        debug("INFO", "Socket for device's {} should be read".format(self.id))
+    def _on_dev_data(self):
+        debug("INFO", "Socket for device's {} has data and should be read".format(self.id))
         while True:
             try:
                 reply = self._read_and_parse_message()
@@ -253,13 +255,13 @@ class TuyaDevice(asyncore.dispatcher, EventEmitter):
             callback(reply)
             self.emit('_next')
 
-    def writable(self):
-        is_writeable = len(self.command_queue) > 0 and self.command_queue[0].get('status') == 'waiting'
-#        debug("DBUG", "Checking if socket IS WRITEABLE ({}:{}): {}".format(self.fd, self.id, is_writeable))
-        return is_writeable
+#    def writable(self):
+#        is_writeable = len(self.command_queue) > 0 and self.command_queue[0].get('status') == 'waiting'
+#        debug("DBUG", "Checking if socket IS WRITEABLE ({}:{}): {}".format(self.connection.fd, self.id, is_writeable))
+#        return is_writeable
 
 #    def handle_write(self):
-#        debug("INFO", "Socket {} for device's {} IS IN WRITEABLE STATE".format(self.fd, self.id))
+#        debug("INFO", "Socket {} for device's {} IS IN WRITEABLE STATE".format(self.connection.fd, self.id))
 
     def set_status(self, value, callback=DO_NOTHING):
         if not self.ip:
@@ -414,7 +416,7 @@ class TuyaDevice(asyncore.dispatcher, EventEmitter):
 
         # Read only those bytes into the buffer
         try:
-            data = self.recv(num_bytes)
+            data = self.connection.receive(num_bytes)
         except socket.timeout as e:
             return None
         self.buffer.extend(data)

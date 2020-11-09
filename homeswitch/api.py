@@ -1,9 +1,10 @@
-import asyncore
+import asyncorepp
 import json
 import time
 
 from hybridserver import HybridServer
 
+import async
 from .device import Device
 from .util import debug
 
@@ -40,18 +41,15 @@ class HomeSwitchAPI(object):
 
 
         if req.method == 'get':
-            def reply(dev, status):
-                print("REPLY")
-                client.message({'devices': {dev.id: status}})
-            self.devices['bf4a36374de48f83d8vd9g'].get_status(reply)
-#            self.devices[]
+            return self.get(client, req)
+
 
         if req.method == 'set':
             def reply(dev, status, intent):
                 print("REPLY")
                 self.server.broadcast({'devices': {dev.id: status}})
-            status = req.body.get('switches').get('bf4a36374de48f83d8vd9g')
-            self.devices['bf4a36374de48f83d8vd9g'].set_status(status, reply)
+            status = req.body.get('switches').get('bf5d0abdb1e6210180duku')
+            self.devices['bf5d0abdb1e6210180duku'].set_status(status, reply)
 
     def on_http_request(self, client, req, error):
         debug("DBUG", "HTTP Request: {} {}:".format(req.method, req.url), req.post_data)
@@ -70,10 +68,35 @@ class HomeSwitchAPI(object):
         client.message({'error': 'not_found'})
 #            self.devices = req.post_data
 
+    def get(self, client, req):
+            def reply(results):
+                response = {'devices': {}, 'ok': True}
+                for res in results:
+                    dev, status = res
+                    response['devices'][dev.id] = {
+                        'metadata': dev.metadata,
+                        'status': status,
+                    }
+                client.message(response)
+
+            # Validate
+            if 'devices' in req.body and type(req.body.get('devices')) != list:
+                return client.message({'error': 'request_error', 'description': 'Invalid devices `field` value'})
+
+            # If the user didn't ask for a specific device, that means all of them
+            devices = self.devices.keys() if 'devices' not in req.body or len(req.body.get('devices')) == 0 else req.body.get('devices')
+            devices = filter(lambda dev_id: dev_id in self.devices, devices)
+            if len(devices) == 0:
+                return client.message({'error': 'not_found', 'description': 'No devices were found'})
+
+            debug("INFO", "Getting status for devices:", devices)
+
+            async.each(devices, lambda dev_id, callback: self.devices[dev_id].get_status(callback), reply)
+
 
     def run(self):
         debug("INFO", "Starting API...")
-        asyncore.loop()
+        asyncorepp.loop()
 #        while self.running:
 #            self.loop()
 #        self.app.run(
@@ -83,7 +106,6 @@ class HomeSwitchAPI(object):
 #            processes=self.processes,
 #            threaded=True,
 #        )
-
 
 
 def main():

@@ -1,8 +1,9 @@
 import time
 from importlib import import_module
 
+import asyncorepp
 from .hw import tuya
-from .util import debug
+from .util import debug, DO_NOTHING
 
 DEVICE_CONTRUCTORS = {
 	"tuya": tuya.TuyaDevice,
@@ -14,14 +15,22 @@ class Device(object):
 		self.id = id
 		self.discovery_status = discovery_status
 		self.switch_status = None
+		self.last_status_update = 0
 		self.hw_metadata = hw_metadata
 		self.last_seen = last_seen
+		self.metadata = config.get('metadata', {})
+		self.status_cache = config.get('status_cache', None)
+		self.refresh_status = int(config.get('refresh_status', None))
 		self.config = config
 		self.hw_metadata = hw_metadata
 		self.hw = self._import_device_module(id, hw, config, hw_metadata) if hw else None
 
 		# Listen to device's events
 		self.hw.on('status_update', self._on_status_update)
+
+		# Periodically refresh the device status
+		if self.refresh_status is not None:
+			asyncorepp.set_interval(self._refresh_status, self.refresh_status)
 
 	def _import_device_module(self, id, hw, config={}, hw_metadata={}):
 		hw_module = import_module("homeswitch.hw.{}".format(hw))
@@ -57,16 +66,23 @@ class Device(object):
 			'hw_metadata': self.hw_metadata,
 		}
 
-	def get_status(self, callback):
+	def get_status(self, callback, ignore_cache=False):
 		if not self.hw:
 			raise Exception("Device has no assigned hardware. Can't get its status")
 		if not self.discovery_status == 'online':
 			raise Exception("Device is not online. Can't get its status")
 		debug("INFO", "Getting device {} status".format(self.id))
+
+		if not ignore_cache and self.status_cache and self.last_status_update > time.time() - self.status_cache:
+			debug("INFO", "Serving device {} status from cache...".format(self.id))
+			return callback(self, self.switch_status)
+
 		return self.hw.get_status(lambda status: self._get_status_callback(status, callback))
 
 	def _get_status_callback(self, status, callback):
 		debug("INFO", "Device {} status is {}".format(self.id, status))
+		self.switch_status = status
+		self.last_status_update = time.time()
 		return callback(self, status)
 
 	def set_status(self, value, callback):
@@ -79,4 +95,11 @@ class Device(object):
 
 	def _set_status_callback(self, status, intent, callback):
 		debug("INFO", "Device {} was set to {} and is now {}".format(self.id, intent, status))
+		self.switch_status = status
+		self.last_status_update = time.time()
 		return callback(self, status, intent)
+
+	def _refresh_status(self):
+		if self.discovery_status == 'online':
+			debug("INFO", "Updating device {} status...".format(self.id))
+			self.get_status(DO_NOTHING, True)

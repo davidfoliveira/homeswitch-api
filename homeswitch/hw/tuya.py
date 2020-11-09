@@ -1,6 +1,5 @@
 import base64
 import binascii
-from hashlib import md5
 import json
 import os
 from pymitter import EventEmitter
@@ -10,6 +9,7 @@ import time
 import traceback
 
 from ..asyncsocket.client import AsyncSocketClient
+from ..md5 import md5
 from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, debug, dict_diff, DO_NOTHING
 
 # Import Crypto.Cipher.AES (from PyCrypto) or pyaes
@@ -322,9 +322,9 @@ class TuyaDevice(EventEmitter):
             cipher = AESCipher(self.key)
             json_payload = cipher.encrypt(json_payload)
             preMd5String = b'data=' + json_payload + b'||lpv=' + PROTOCOL_VERSION_BYTES_31 + b'||' + self.key
-            m = md5()
-            m.update(preMd5String)
-            hexdigest = m.hexdigest()
+            hexdigest = md5(preMd5String).hexdigest()
+#            m.update()
+#             = m.hexdigest()
             json_payload = PROTOCOL_VERSION_BYTES_31 + hexdigest[8:][:16].encode('latin1') + json_payload
 
         postfix_payload = hex2bin(bin2hex(json_payload) + SUFFIX)
@@ -467,7 +467,7 @@ class TuyaDeviceListener(EventEmitter):
 
         self.host = host
         self.port = port
-        self.key = md5(udp_key).digest() if udp_key else None
+        self.key = md5(str(udp_key)).digest() if udp_key else None
         self.unseen_timeout = unseen_timeout
         self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         self.socket.setblocking(0)

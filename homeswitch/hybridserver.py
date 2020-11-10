@@ -3,6 +3,7 @@ import asyncore
 import socket
 import json
 from pymitter import EventEmitter
+import time
 
 import proto
 from .util import debug, readUInt32BE, writeUInt32BE
@@ -11,12 +12,14 @@ from .util import debug, readUInt32BE, writeUInt32BE
 HTTP_STATUS_BY_ERROR = {
     'request_error': 400,
     'not_found': 404,
+    'internal': 500,
 }
 
 HTTP_STATUS_DESCRIPTION = {
     '200': 'OK',
     '400': 'Invalid request',
     '404': 'Not Found',
+    '500': 'Internal Server Error',
 }
 
 class HybridServer(asyncore.dispatcher, EventEmitter):
@@ -86,6 +89,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         self.close()
 
     def message(self, body):
+        body['when'] = time.time() * 1000
         if self.request.proto == 3:
             self.send_hs(body)
         else:
@@ -141,7 +145,6 @@ class HomeSwitchRequest(EventEmitter):
                     self.raw_request = ""
                     if len(self._raw_body) >= self.size:
                         self._eating_stage = "done"
-                        print("RB: ", self._raw_body)
                         self.body = json.loads(self._raw_body)
                         self.method = self.body.get('method')
                         if not self.method:

@@ -1,16 +1,21 @@
 # TODO
 
-- Check why API client (on the CLI) gets disconnected when the targetted device is offline (not online yet)
+- Support for getting device's status once it becomes online
+- Notify multiple device status changes in one message when they happen at the same time
+
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
-- Support for periodical live gets
 
 - Manage better handle_read() - instead of doing a while True: which will eventually timeout on a socket.read(), make it call the handle_read function over and over again to sinalise new data
 
-- Think about adding support a class which does the socket messaging with buffering
+- Think about adding support for a class which does the socket messaging with buffering
 
-- FIX (slow connect):
-2020-11-08 22:08:24.408117Z: [DBUG] Sending to bf4a36374de48f83d8vd9g...
-2020-11-08 22:08:24.408142Z: [WARN] I was told I can process the next queued item but the item is not in 'waiting' state
-
+Check instability:
+- https://github.com/davidfoliveira/homeswitch-api/issues/1 # Fix attempt to send item that is not in `waiting` state
+- https://github.com/davidfoliveira/homeswitch-api/issues/2 # Fix or handle `Operation timed out` on connect
+- https://github.com/davidfoliveira/homeswitch-api/issues/3 # Fix or handle "timeout: timed out" on send()
+- https://github.com/davidfoliveira/homeswitch-api/issues/4 # Check `[Errno 64] EHOSTDOWN` issue on connect()
+- https://github.com/davidfoliveira/homeswitch-api/issues/5 # Check `Connection reset by peer` and handle it
+- https://github.com/davidfoliveira/homeswitch-api/issues/6 # Fix infinite loop of "Should be read", Disconnect
+- https://github.com/davidfoliveira/homeswitch-api/issues/7 # Fix KeyError on HTTP client disconnect
 
 - Evaluate whether we should destroy the hardware module or not when hardware metadata changes

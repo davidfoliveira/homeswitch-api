@@ -85,8 +85,7 @@ class DeviceListener(EventEmitter):
             sleep(self.sleep_interval)
 
     def _on_new_device(self, id, message):
-        debug("INFO", "Found device:", id)
-        self.emit('discover', id, message)
+        debug("INFO", "Found device: {} at {}".format(id, message.get('ip')))
 
         if not self.sync_on_changes:
             url = self.api_url + "/api/device/discovery"

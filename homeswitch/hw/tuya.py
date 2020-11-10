@@ -1,7 +1,9 @@
 import base64
 import binascii
+from hashlib import md5
 import json
 import os
+import pyaes  # https://github.com/ricmoo/pyaes
 from pymitter import EventEmitter
 import socket
 import sys
@@ -9,18 +11,9 @@ import time
 import traceback
 
 from ..asyncsocket.client import AsyncSocketClient
-from ..md5 import md5
-from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, debug, dict_diff, DO_NOTHING
+from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, debug, dict_diff, DO_NOTHING, bin2hex_sep
 
-# Import Crypto.Cipher.AES (from PyCrypto) or pyaes
-try:
-    import Crypto
-    from Crypto.Cipher import AES
-except ImportError:
-    Crypto = AES = None
-    import pyaes  # https://github.com/ricmoo/pyaes
-
-
+Crypto = None
 CMD_CONTROL = 7
 PROTOCOL_VERSION_BYTES_31 = b'3.1'
 PROTOCOL_VERSION_BYTES_33 = b'3.3'
@@ -35,15 +28,15 @@ class AESCipher(object):
         self.key = key
 
     def encrypt(self, raw, use_base64 = True):
-        if Crypto:
-            raw = self._pad(raw)
-            cipher = AES.new(self.key, mode=AES.MODE_ECB)
-            crypted_text = cipher.encrypt(raw)
-        else:
-            _ = self._pad(raw)
-            cipher = pyaes.blockfeeder.Encrypter(pyaes.AESModeOfOperationECB(self.key))
-            crypted_text = cipher.feed(raw)
-            crypted_text += cipher.feed()
+        # if Crypto:
+        #     raw = self._pad(raw)
+        #     cipher = AES.new(self.key, mode=AES.MODE_ECB)
+        #     crypted_text = cipher.encrypt(raw)
+        # else:
+        _ = self._pad(raw)
+        cipher = pyaes.blockfeeder.Encrypter(pyaes.AESModeOfOperationECB(self.key))
+        crypted_text = cipher.feed(raw)
+        crypted_text += cipher.feed()
 
         if use_base64:
             return base64.b64encode(crypted_text)
@@ -54,15 +47,15 @@ class AESCipher(object):
         if use_base64:
             enc = base64.b64decode(enc)
 
-        if Crypto:
-            cipher = AES.new(self.key, AES.MODE_ECB)
-            raw = cipher.decrypt(enc)
-            return self._unpad(raw).decode('utf-8')
-        else:
-            cipher = pyaes.blockfeeder.Decrypter(pyaes.AESModeOfOperationECB(self.key))
-            plain_text = cipher.feed(enc)
-            plain_text += cipher.feed()
-            return plain_text
+        # if Crypto:
+        #     cipher = AES.new(self.key, AES.MODE_ECB)
+        #     raw = cipher.decrypt(enc)
+        #     return self._unpad(raw).decode('utf-8')
+        # else:
+        cipher = pyaes.blockfeeder.Decrypter(pyaes.AESModeOfOperationECB(self.key))
+        plain_text = cipher.feed(enc)
+        plain_text += cipher.feed()
+        return plain_text
 
     def _pad(self, s):
         padnum = self.bs - len(s) % self.bs
@@ -270,7 +263,7 @@ class TuyaDevice(EventEmitter):
         def set_callback(reply):
             debug("DBUG", "Got device {} status after SET:".format(self.gw_id), reply)
             status = reply.get('dps').get(self.dps)
-            self.emit('status_update', status)
+            self.emit('status_update', status, 'set')
             return callback(status)
 
         return self.send_command(7, {
@@ -280,14 +273,14 @@ class TuyaDevice(EventEmitter):
             'uid':   self.gw_id,
         }, set_callback)
 
-    def get_status(self, callback=DO_NOTHING):
+    def get_status(self, callback=DO_NOTHING, origin='UNKWNOWN'):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
         debug("DBUG", "Getting device status (IP: {}, PORT: {}, GW_ID: {}, KEY: {})".format(self.ip, self.port, self.gw_id, self.key))
         def get_callback(reply):
             debug("DBUG", "Got device {} status:".format(self.gw_id), reply)
             status = reply.get('dps').get(self.dps)
-            self.emit('status_update', status)
+            self.emit('status_update', status, origin)
             return callback(status)
 
         return self.send_command(7, {
@@ -468,6 +461,7 @@ class TuyaDeviceListener(EventEmitter):
         self.host = host
         self.port = port
         self.key = md5(str(udp_key)).digest() if udp_key else None
+        print("K: ", self.key)
         self.unseen_timeout = unseen_timeout
         self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         self.socket.setblocking(0)
@@ -502,7 +496,7 @@ class TuyaDeviceListener(EventEmitter):
             bytesAddressPair = self.socket.recvfrom(1024)
         except socket.error as e:
             # No data
-            if e.errno == 35:
+            if e.errno in (35, 11):
                 return 0
             raise e
 

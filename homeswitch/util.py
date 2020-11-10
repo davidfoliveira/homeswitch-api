@@ -7,6 +7,11 @@ def bin2hex(data):
     return binascii.hexlify(data)
 
 
+def bin2hex_sep(data, split_every):
+    hex_data = binascii.hexlify(data)
+    return ' '.join([hex_data[i:i+split_every] for i in range(0, len(hex_data), split_every)])
+
+
 def hex2bin(data):
     return binascii.unhexlify(data)
 

@@ -23,7 +23,16 @@ class HomeSwitchAPI(object):
         for dev_id, config in devices.items():
             if 'hw' not in config:
                 raise Exception("Device {} doesn't have a configured hardware type".format(dev_id))
-            devices[dev_id] = Device(id=dev_id, hw=config.get('hw'), config=config)
+            devices[dev_id] = self._create_device(dev_id, config)
+
+    def _create_device(self, dev_id, config):
+        dev = Device(id=dev_id, hw=config.get('hw'), config=config)
+        dev.on('status_update', lambda status, origin: self._broadcast_status_update(dev_id, status, origin))
+        return dev
+
+    def _broadcast_status_update(self, dev_id, status, origin):
+        dev = self.devices[dev_id]
+        self.server.broadcast({'devices': {dev_id: {'status': status, 'origin': origin}}})
 
     def on_request(self, client, req, error):
         if req.proto == 3:
@@ -39,17 +48,18 @@ class HomeSwitchAPI(object):
         if req.proto == "http":
             return self.on_http_request(client, req, error)
 
+        try:
+            if req.method == 'get':
+                return self.get(client, req)
 
-        if req.method == 'get':
-            return self.get(client, req)
+            if req.method == 'set':
+#                def reply(dev, status, intent):
+#                    self.server.broadcast({'devices': {dev.id: status}})
+                status = req.body.get('switches').get('bf5d0abdb1e6210180duku')
+                self.devices['bf5d0abdb1e6210180duku'].set_status(status)
+        except Exception as e:
+            return client.message({'error': 'internal', 'description': str(e)})
 
-
-        if req.method == 'set':
-            def reply(dev, status, intent):
-                print("REPLY")
-                self.server.broadcast({'devices': {dev.id: status}})
-            status = req.body.get('switches').get('bf5d0abdb1e6210180duku')
-            self.devices['bf5d0abdb1e6210180duku'].set_status(status, reply)
 
     def on_http_request(self, client, req, error):
         debug("DBUG", "HTTP Request: {} {}:".format(req.method, req.url), req.post_data)
@@ -58,11 +68,12 @@ class HomeSwitchAPI(object):
                 # Ignore devices that we didn't configure
                 if dev_id in self.devices:
                     self.devices[dev_id].update(discovery_status='online', hw_metadata=value)
+
             for dev_id, value in self.devices.items():
                 # If the device is not mentioned, mark it offline
                 if dev_id not in req.post_data:
                     self.devices[dev_id].update(discovery_status='offline')
-#            print("UPDATE DEVS: ", req.post_data)
+
             client.message({'ok': True})
 
         client.message({'error': 'not_found'})
@@ -91,7 +102,7 @@ class HomeSwitchAPI(object):
 
             debug("INFO", "Getting status for devices:", devices)
 
-            async.each(devices, lambda dev_id, callback: self.devices[dev_id].get_status(callback), reply)
+            async.each(devices, lambda dev_id, callback: self.devices[dev_id].get_status(callback, origin='request'), reply)
 
 
     def run(self):

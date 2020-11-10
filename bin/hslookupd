@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from homeswitch.devices import main
+from homeswitch.devicelistener import main
 
 
 if __name__ == '__main__':

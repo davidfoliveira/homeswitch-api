@@ -1,11 +1,10 @@
 import json
+from importlib import import_module
 from pymitter import EventEmitter
 import os
-#import requests
+import requests
 from time import sleep, time
 import threading
-
-import requests
 
 from .hw.tuya import TuyaDeviceListener
 from .util import debug
@@ -32,9 +31,8 @@ class DeviceListener(EventEmitter):
             listener.on('discover', lambda id, m: self._on_new_device(id, m))
             listener.on('lose', lambda id: self._on_lose_device(id))
 
-    def _create_listener(hw_type, opts={}):
-    def _import_device_module(self, hw, hw_metadata={}):
-        hw_module = import_module("homeswitch.hw.{}".format(hw))
+    def _create_listener(self, hw_type, hw_metadata={}):
+        hw_module = import_module("homeswitch.hw.{}".format(hw_type))
         return hw_module.DeviceListener(**hw_metadata)
 
     def start(self, background=False):

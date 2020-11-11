@@ -84,7 +84,7 @@ class TuyaDevice(EventEmitter):
         self.gw_id = hw_metadata.get('gwId', None)
         self.dps = str(config.get('dps', 1))
         self.persistent_connections = config.get('persistent_connections', False)
-#        self.get_status_on_start = config.get('get_status_on_start', True)
+        self.get_status_on_start = config.get('get_status_on_start', True)
 
         # Creates the connection object and sets event handlers
         self.connection = AsyncSocketClient()
@@ -122,11 +122,11 @@ class TuyaDevice(EventEmitter):
             if self.persistent_connections:
                 debug("INFO", "Connecting to the device as persistent_connections is ON")
                 self._connect()
-            else if len(self.command_queue) > 0:
+            elif len(self.command_queue) > 0:
                 self._connect()
-#            elif self.get_status_on_start:
-#                debug("INFO", "Getting device's status on start...")
-#                self.get_status()
+            if self.get_status_on_start:
+               debug("INFO", "Getting device's status on start...")
+               self.get_status(origin='online')
 
     def _on_can_send_next_command(self):
         debug("DBUG", "We can send next command for {}!!!".format(self.id))

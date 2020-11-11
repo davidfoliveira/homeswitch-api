@@ -102,7 +102,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
 
     def message(self, body):
         body['when'] = time.time() * 1000
-        if self.request.proto == 3:
+        if self.proto == 3:
             self.send_hs(body)
         else:
             if body.get('error'):
@@ -111,7 +111,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
                 self.send_http(200, body)
 
     def send_error(self, error):
-        if self.request.proto == 3:
+        if self.proto == 3:
             self.send_hs({error: error})
         else:
             self.send_http(HTTP_STATUS_BY_ERROR[error], error)

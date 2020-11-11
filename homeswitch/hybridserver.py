@@ -83,8 +83,15 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
                 return
         self.request.push_data(data)
 
+    def handle_error(self):
+        debug("INFO", "Client {} crashed".format(self.id))
+        import traceback
+        traceback.print_stack()
+
     def handle_close(self):
         debug("INFO", "Client {} has disconnected".format(self.id))
+        import traceback
+        traceback.print_stack()
         self.server.remove_user(self)
         self.close()
 

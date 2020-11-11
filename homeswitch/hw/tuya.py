@@ -129,7 +129,7 @@ class TuyaDevice(EventEmitter):
             else:
                 debug("WARN", "I was told I can process the next queued item but the item is not in 'waiting' state")
         else:
-            debug("DBUG", "Command queue is empty...".format(self.id))
+            debug("DBUG", "No more commands in the queue...".format(self.id))
             if not self.persistent_connections:
                 debug("INFO", "Disconnecting as command queue is empty")
                 self._disconnect()

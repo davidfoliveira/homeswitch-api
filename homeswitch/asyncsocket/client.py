@@ -44,6 +44,7 @@ class AsyncSocketClient(EventEmitter):
     def disconnect(self):
         if self.connected and self.socket and self.socket.socket:
             self.connected = False
+            debug("DBUG", "Closing connecting socket to {}:{} (fd: {})".format(self.ip, self.port, self.fd))
             self.socket.close()
             return True
 

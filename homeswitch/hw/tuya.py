@@ -109,10 +109,20 @@ class TuyaDevice(EventEmitter):
             self.emit('_ip')
 
     def _on_ip_change(self):
+
+        # Do we have anything on the command queue? Ensure the status of it is 'waiting' so we can resend it
+        if len(self.command_queue) > 0 and self.command_queue[0]['status'] == 'sent':
+            self.command_queue[0]['status'] = 'waiting'
+
+        # If connected, disconnect (we will connect to the new IP in case there's something in the queue or persistent_connections are on)
+        self._disconnect()
+
         # Be super sure we can connect
         if self.gw_id and self.ip:
             if self.persistent_connections:
                 debug("INFO", "Connecting to the device as persistent_connections is ON")
+                self._connect()
+            else if len(self.command_queue) > 0:
                 self._connect()
 #            elif self.get_status_on_start:
 #                debug("INFO", "Getting device's status on start...")
@@ -202,6 +212,10 @@ class TuyaDevice(EventEmitter):
 
     def _on_dev_connection_break(self):
         debug("INFO", "Device {} has disconnected.".format(self.id))
+        # If the connection broke while we were waiting for a reply, change it's status to 'waiting' so it can be resent
+        if len(self.command_queue) > 0 and self.command_queue[0].get('status') == 'sent':
+            self.command_queue[0]['status'] = 'waiting'
+
         if self.connected:
             debug("INFO", "Reconnecting to {}...".format(self.id))
             self._reconnect()

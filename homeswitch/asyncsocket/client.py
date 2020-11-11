@@ -42,10 +42,13 @@ class AsyncSocketClient(EventEmitter):
         self.socket.start()
 
     def disconnect(self):
-        if self.connected and self.socket and self.socket.socket:
+        if self.connected:
             self.connected = False
             debug("DBUG", "Closing connecting socket to {}:{} (fd: {})".format(self.ip, self.port, self.fd))
-            self.socket.close()
+            if self.socket and self.socket.socket:
+                self.socket.close()
+            else:
+                debug("DBUG", "Connection to {}:{} NOT closed as is has no socket (fd: {})".format(self.ip, self.port, self.fd))
             return True
 
     def send(self, data):

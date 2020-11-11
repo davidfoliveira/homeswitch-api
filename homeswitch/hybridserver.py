@@ -43,7 +43,7 @@ class HybridServer(asyncore.dispatcher, EventEmitter):
 
     def broadcast(self, message, ignore=[]):
         for id, client in self.clients.items():
-            if not id in ignore:
+            if client.proto == 3 and not id in ignore:
                 debug("DBUG", "Broadcasting message to", id)
                 client.message(message)
 
@@ -57,13 +57,18 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         debug("INFO", "NEW CLIENT: ", self.id)
         self.server = server
         self.request = None
+        self.proto = None
+        self.status = "alive"
         asyncore.dispatcher_with_send.__init__(self, sock)
         EventEmitter.__init__(self)
         # Proxy 'request' event to 
         self.on('request', self.process_request)
 
     def process_request(self, request, error):
+        if self.proto == None:
+            self.proto = request.proto
         self.server.emit('request', self, request, error)
+        self.request = None
 
     def handle_read(self):
         data = None
@@ -89,11 +94,11 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         traceback.print_stack()
 
     def handle_close(self):
-        debug("INFO", "Client {} has disconnected".format(self.id))
-        import traceback
-        traceback.print_stack()
-        self.server.remove_user(self)
-        self.close()
+        if self.status == "alive":
+            debug("INFO", "Client {} has disconnected".format(self.id))
+            self.status = "gone"
+            self.server.remove_user(self)
+            self.close()
 
     def message(self, body):
         body['when'] = time.time() * 1000

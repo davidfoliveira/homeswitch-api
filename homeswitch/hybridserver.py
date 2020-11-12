@@ -90,6 +90,10 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
 
     def handle_error(self):
         debug("INFO", "Client {} crashed".format(self.id))
+        debug("DEBUG", "Exception")
+        import traceback
+        traceback.print_exc()
+        debug("DEBUG", "Stack")
         import traceback
         traceback.print_stack()
 

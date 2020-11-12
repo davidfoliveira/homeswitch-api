@@ -96,6 +96,7 @@ class TuyaDevice(EventEmitter):
         self.connection.on('data', self._on_dev_data)
 
         self.connected = False
+        self.connecting = False
         self.command_queue = []
         self.buffer = bytearray()
 
@@ -181,14 +182,15 @@ class TuyaDevice(EventEmitter):
             'status': 'waiting',
             'callback': callback,
         })
-        if not self.connected:
+        if not self.connected and not self.connecting:
             self._connect()
 
     def _connect(self):
-        debug("DBUG", "IP: {}, PORT: {}, GW_ID: {}, KEY: {}".format(self.ip, self.port, self.gw_id, self.key))
+        debug("DBUG", "IP: {}, PORT: {}, GW_ID: {}".format(self.ip, self.port, self.gw_id))
         if self.ip and self.port and self.gw_id and self.key:
             debug("INFO", "Connecting to device {} at {}:{}...".format(self.id, self.ip, self.port))
 #            try:
+            self.connecting = True
             self.connection.connect(self.ip, self.port, timeout=self.socket_timeout)
 #            except Exception as ex:
 #                debug("ERRO", "Error connecting to device {} at {}:{}: {}".format(self.id, self.ip, self.port, ex))
@@ -208,6 +210,7 @@ class TuyaDevice(EventEmitter):
     def _on_dev_connect(self):
         debug("INFO", "Connected to device {} !".format(self.id))
         self.connected = True
+        self.connecting = False
         self.emit('_next')
 
     def _on_dev_connection_break(self):
@@ -232,7 +235,7 @@ class TuyaDevice(EventEmitter):
 
     def _on_dev_data(self):
         debug("INFO", "Socket for device's {} has data and should be read".format(self.id))
-        while True:
+        while self.connected:
             try:
                 reply = self._read_and_parse_message()
                 if reply is None:
@@ -273,7 +276,7 @@ class TuyaDevice(EventEmitter):
     def set_status(self, value, callback=DO_NOTHING):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
-        debug("DBUG", "Getting device status to {} (IP: {}, PORT: {}, GW_ID: {}, KEY: {})".format(value, self.ip, self.port, self.gw_id, self.key))
+        debug("DBUG", "Getting device status to {} (IP: {}, PORT: {}, GW_ID: {})".format(value, self.ip, self.port, self.gw_id))
         def set_callback(reply):
             debug("DBUG", "Got device {} status after SET:".format(self.gw_id), reply)
             status = reply.get('dps').get(self.dps)
@@ -290,7 +293,7 @@ class TuyaDevice(EventEmitter):
     def get_status(self, callback=DO_NOTHING, origin='UNKWNOWN'):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
-        debug("DBUG", "Getting device status (IP: {}, PORT: {}, GW_ID: {}, KEY: {})".format(self.ip, self.port, self.gw_id, self.key))
+        debug("DBUG", "Getting device status (IP: {}, PORT: {}, GW_ID: {})".format(self.ip, self.port, self.gw_id))
         def get_callback(reply):
             debug("DBUG", "Got device {} status:".format(self.gw_id), reply)
             status = reply.get('dps').get(self.dps)

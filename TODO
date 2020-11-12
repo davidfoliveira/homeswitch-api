@@ -1,9 +1,12 @@
 # TODO
 
 Needs:
+- Remove ids from github
 - Add support for command/response IDs as it's not really possible to guarantee sequential order on a stream of events
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
 - Manage better handle_read() - instead of doing a while True: which will eventually timeout on a socket.read(), make it call the handle_read function over and over again to sinalise new data
+- Support for command timeout (to avoid commands from being sent too late)
+- Support for not queuing similar status update commands
 
 Majors:
 - Notify multiple device status changes in one message when they happen at the same time

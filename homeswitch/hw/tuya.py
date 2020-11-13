@@ -135,7 +135,12 @@ class TuyaDevice(EventEmitter):
             debug("DBUG", "Sending to {}...".format(self.id))
             if self.command_queue[0].get('status') == 'waiting':
                 bin_message = self._serialise_message(self.command_queue[0])
-                self.connection.send(bin_message)
+                try:
+                    self.connection.send(bin_message)
+                except socket.error as e:
+                    debug("DBUG", "Error sending message to device {}: ".format(self.id), e)
+                    if e.errno in (41): # might mean the device went away, we need to reconnect and retry
+                        return self._reconnect()
                 self.command_queue[0]['status'] = 'sent'
             else:
                 debug("WARN", "I was told I can process the next queued item but the item is not in 'waiting' state")

@@ -121,7 +121,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
             self.send_http(HTTP_STATUS_BY_ERROR[error], error)
 
     def send_hs(self, body):
-        self.send(proto.serialise(body))
+        self.fault_tolerant_send(proto.serialise(body))
 
     def send_http(self, status, body):
         raw_body = json.dumps(body)
@@ -129,8 +129,19 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         response += "Content-type: application/json\r\n"
         response += "Content-length: {}\r\n".format(len(raw_body))
         response += "\r\n"
-        self.send(response)
-        self.send(raw_body)
+        self.fault_tolerant_send(response)
+        self.fault_tolerant_send(raw_body)
+
+    def fault_tolerant_send(self, data):
+        try:
+            self.send(data)
+        except socket.error as e:
+            if e.args[0] in (ECONNRESET, ENOTCONN, ESHUTDOWN, ECONNABORTED, EPIPE, EBADF): # client went away, just ignore
+                pass
+            if e.errno in (41): # might mean the client went away, just ignore
+                pass
+            raise
+
 
 
 class HomeSwitchRequest(EventEmitter):

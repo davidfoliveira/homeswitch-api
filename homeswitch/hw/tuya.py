@@ -182,8 +182,12 @@ class TuyaDevice(EventEmitter):
             'status': 'waiting',
             'callback': callback,
         })
+        # If not connected and not connecting, connect! Connect will take care of processing the queue
         if not self.connected and not self.connecting:
-            self._connect()
+            return self._connect()
+        # If connected but the queue was empty, start processing it
+        if self.connected and len(self.command_queue) == 1:
+            return self.emit('_next')
 
     def _connect(self):
         debug("DBUG", "IP: {}, PORT: {}, GW_ID: {}".format(self.ip, self.port, self.gw_id))
@@ -199,9 +203,10 @@ class TuyaDevice(EventEmitter):
             debug("WARN", "Cannot connect because of not having an ip, port, device id or key")
 
     def _disconnect(self):
-        debug("INFO", "Disconnecting from device {}...".format(self.id))
-        self.connected = False
-        self.connection.disconnect()
+        if self.connected or self.connecting:
+            debug("INFO", "Disconnecting from device {}...".format(self.id))
+            self.connected = False
+            self.connection.disconnect()
 
     def _reconnect(self):
         self._disconnect()
@@ -478,7 +483,6 @@ class TuyaDeviceListener(EventEmitter):
         self.host = host
         self.port = port
         self.key = md5(str(udp_key)).digest() if udp_key else None
-        print("K: ", self.key)
         self.unseen_timeout = unseen_timeout
         self.socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
         self.socket.setblocking(0)
@@ -523,6 +527,8 @@ class TuyaDeviceListener(EventEmitter):
         # Parse messages and process them
         change_count = 0
         for m in self._parse_messages(data):
+#            m.payload['ip'] = m.payload['ip'].replace('.10.', '.11.') # TODO: remove me, just for making connects fail
+#            print("M: ", m)
             change_count += self._process_message(m.payload, address)
 
         return change_count

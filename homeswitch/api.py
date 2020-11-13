@@ -107,16 +107,8 @@ class HomeSwitchAPI(object):
 
     def run(self):
         debug("INFO", "Starting API...")
-        asyncorepp.loop()
-#        while self.running:
-#            self.loop()
-#        self.app.run(
-#            host=self.host,
-#            port=self.port,
-#            debug=self.debug,
-#            processes=self.processes,
-#            threaded=True,
-#        )
+        asyncorepp.loop(use_poll=True)
+
 
 
 def main():

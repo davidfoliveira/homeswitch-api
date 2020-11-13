@@ -98,6 +98,7 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
         EventEmitter.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
         if timeout is not None:
+            debug("DBUG", "Setting socket timeout to {}".format(timeout))
             self.socket.settimeout(timeout)
 
     def start(self):
@@ -130,6 +131,10 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
     def handle_write(self):
         self.emit('write')
 
+    # Check if socket is readable
+    def readable(self):
+        return self.connected
+
     # Check if socket is writeable
-    def writeable(self):
+    def writable(self):
         return False

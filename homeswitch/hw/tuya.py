@@ -144,7 +144,7 @@ class TuyaDevice(EventEmitter):
                         return self._reconnect()
                 self.command_queue[0]['status'] = 'sent'
             else:
-                debug("WARN", "I was told I can process the next queued item but the item is not in 'waiting' state")
+                debug("WARN", "I was told I could process the next queued item but the item is not in 'waiting' state")
         else:
             debug("DBUG", "No more commands in the queue...".format(self.id))
             if not self.persistent_connections:

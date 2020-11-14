@@ -26,7 +26,5 @@ Later:
 Issues:
 Check instability - might be related to OSX issue with ARP:
 - https://github.com/davidfoliveira/homeswitch-api/issues/1 # Fix attempt to send item that is not in `waiting` state - ongoing, added logging and changed a few things to change the status of `sent` to `waiting` in case of disconnect
-- https://github.com/davidfoliveira/homeswitch-api/issues/2 # Fix or handle `Operation timed out` on connect
 - https://github.com/davidfoliveira/homeswitch-api/issues/4 # Check `[Errno 64] EHOSTDOWN` issue on connect()
-- https://github.com/davidfoliveira/homeswitch-api/issues/5 # Check `Connection reset by peer` and handle it
 - https://github.com/davidfoliveira/homeswitch-api/issues/13 # Don't read infinitely

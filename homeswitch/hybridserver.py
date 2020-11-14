@@ -1,3 +1,5 @@
+from errno import EALREADY, EINPROGRESS, EWOULDBLOCK, ECONNRESET, EINVAL, \
+     ENOTCONN, ESHUTDOWN, EINTR, EISCONN, EBADF, ECONNABORTED, EPIPE, EAGAIN
 import re
 import asyncore
 import socket
@@ -137,9 +139,9 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
             self.send(data)
         except socket.error as e:
             if e.args[0] in (ECONNRESET, ENOTCONN, ESHUTDOWN, ECONNABORTED, EPIPE, EBADF): # client went away, just ignore
-                pass
-            if e.errno in (41): # might mean the client went away, just ignore
-                pass
+                return
+            if e.errno in (41, ): # might mean the client went away, just ignore
+                return
             raise
 
 

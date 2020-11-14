@@ -74,41 +74,49 @@ class Device(EventEmitter):
         }
 
     def get_status(self, callback=DO_NOTHING, origin='UNKWNOWN', ignore_cache=False):
-        if not self.hw:
-            raise Exception("Device has no assigned hardware. Can't get its status")
         debug("INFO", "Getting device {} status".format(self.id))
-
+        if not self.hw:
+            debug("DBUG", "Device {} has no assigned hardware. Cannot set its status".format(self.id))
+            return callback({'error': 'Device {} has no assigned hardware. Cannott set its status'.format(self.id)})
         if not self.discovery_status == 'online':
-            debug("WARN", "Device is not online. Can't get its status")
-            return callback(self, None)
-
+            debug("WARN", "Device {} is not online. Cannot get its status".format(self.id))
+            return callback({'error': 'Device {} is not online. Cannot get its status'.format(self.id)}, None)
         if not ignore_cache and self.status_cache and self.last_status_update > time.time() - self.status_cache:
             debug("INFO", "Serving device {} status from cache...".format(self.id))
-            return callback(self, self.switch_status)
+            return callback(None, self.switch_status)
 
-        return self.hw.get_status(lambda status: self._get_status_callback(status, callback), origin)
+        return self.hw.get_status(lambda err, status: self._get_status_callback(err, status, callback), origin)
 
-    def _get_status_callback(self, status, callback):
+    def _get_status_callback(self, err, status, callback):
+        if err:
+            debug("ERRO", "Error getting device {} status:".format(self.id), err)
+            return callback(err, None)
+
         debug("INFO", "Device {} status is {}".format(self.id, status))
         self.switch_status = status
         self.last_status_update = time.time()
-        return callback(self, status)
+        return callback(None, status)
 
     def set_status(self, value, callback=DO_NOTHING):
-        if not self.hw:
-            raise Exception("Device has no assigned hardware. Can't set its status")
-        if not self.discovery_status == 'online':
-            raise Exception("Device is not online. Can't get its status")
-
         debug("INFO", "Setting device {} status to {}".format(self.id, value))
+        if not self.hw:
+            debug("DBUG", "Device {} has no assigned hardware. Cannot set its status".format(self.id))
+            return callback({'error': 'Device {} has no assigned hardware. Cannott set its status'.format(self.id)})
+        if not self.discovery_status == 'online':
+            debug("DBUG", "Device {} is not online. Cannot set its status".format(self.id))
+            return callback({'error': 'Device {} is not online. Cannot set its status'.format(self.id)})
 
-        return self.hw.set_status(value, lambda status: self._set_status_callback(status, value, callback))
+        return self.hw.set_status(value, lambda err, status: self._set_status_callback(err, status, value, callback))
 
-    def _set_status_callback(self, status, intent, callback):
+    def _set_status_callback(self, err, status, intent, callback):
+        if err:
+            debug("ERRO", "Error settings device {} status to {}:".format(self.id, intent), err)
+            return callback(err, None)
+
         debug("INFO", "Device {} was set to {} and is now {}".format(self.id, intent, status))
         self.switch_status = status
         self.last_status_update = time.time()
-        return callback(self, status, intent)
+        return callback(None, status, intent)
 
     def _refresh_status(self):
         if self.discovery_status == 'online':

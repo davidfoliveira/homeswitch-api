@@ -75,7 +75,7 @@ class TuyaDevice(EventEmitter):
         self.key = config.get('key', None)
         self.ip = config.get('ip', hw_metadata.get('ip', None))
         self.port = config.get('port', 6668)
-        self.socket_timeout = config.get('socket_timeout', 2)
+        self.socket_timeout = config.get('socket_timeout', 10)
         self.version = float(hw_metadata.get('version', '3.3'))
         self.active = hw_metadata.get('active', None)
         self.ablilty = hw_metadata.get('ablilty', None)
@@ -89,6 +89,7 @@ class TuyaDevice(EventEmitter):
         # Creates the connection object and sets event handlers
         self.connection = AsyncSocketClient()
         self.connection.on('connect', self._on_dev_connect)
+        self.connection.on('timeout', self._on_dev_connection_timeout)
         self.connection.on('break', self._on_dev_connection_break)
         self.connection.on('disconnect', self._on_dev_disconnect)
         self.connection.on('exception', self._on_dev_exception)
@@ -173,9 +174,9 @@ class TuyaDevice(EventEmitter):
         # Did the IP change? Disconnect and connect to the new one!
         if ip_before != self.ip:
             if ip_before:
-                debug("DBUG", "Device {} IP address has changed from {} to {}".format(self.id, ip_before, self.ip))
+                debug("DBUG", "Tuya device {} IP address has changed from {} to {}".format(self.id, ip_before, self.ip))
             else:
-                debug("DBUG", "Device {} IP was set to {}".format(self.id, self.ip))
+                debug("DBUG", "Tuya device {} IP was set to {}".format(self.id, self.ip))
 
             if self.gw_id and self.ip:
                 self.emit('_ip')
@@ -197,10 +198,11 @@ class TuyaDevice(EventEmitter):
     def _connect(self):
         debug("DBUG", "IP: {}, PORT: {}, GW_ID: {}".format(self.ip, self.port, self.gw_id))
         if self.ip and self.port and self.gw_id and self.key:
-            debug("INFO", "Connecting to device {} at {}:{}...".format(self.id, self.ip, self.port))
+            debug("INFO", "Connecting to Tuya device {} at {}:{}...".format(self.id, self.ip, self.port))
 #            try:
             self.connecting = True
             self.connection.connect(self.ip, self.port, timeout=self.socket_timeout)
+            debug("DBUG", "Connection to Tuya device {} at {}:{} for file descriptor {}".format(self.id, self.ip, self.port, self.connection.fd))
 #            except Exception as ex:
 #                debug("ERRO", "Error connecting to device {} at {}:{}: {}".format(self.id, self.ip, self.port, ex))
 #                self._disconnect()
@@ -209,7 +211,7 @@ class TuyaDevice(EventEmitter):
 
     def _disconnect(self):
         if self.connected or self.connecting:
-            debug("INFO", "Disconnecting from device {}...".format(self.id))
+            debug("INFO", "Disconnecting from Tuya device {}...".format(self.id))
             self.connected = False
             self.connection.disconnect()
 
@@ -218,10 +220,25 @@ class TuyaDevice(EventEmitter):
         self._connect()
 
     def _on_dev_connect(self):
-        debug("INFO", "Connected to device {} !".format(self.id))
+        debug("INFO", "Connected to Tuya device {} !".format(self.id))
         self.connected = True
         self.connecting = False
         self.emit('_next')
+
+    def _on_dev_connection_timeout(self):
+        debug("WARN", "Timed out while connecting to Tuya device {}.".format(self.id))
+        self.connecting = False
+        self.connected = False
+        # If persistent connections are on, keep trying to connect...
+        if self.persistent_connections:
+            return self._connect()
+
+        # Otherwise, return an error to each command in the queue
+        # TODO: change me according to retry policy. Some parts of the code retry forever, others fail immediately
+        while len(self.command_queue) > 0:
+            msg_obj = self.command_queue.pop(0)
+            callback = msg_obj.get('callback')
+            callback({'error': 'Timeout while trying to connect to device {}'.format(self.id)}, None)
 
     def _on_dev_connection_break(self):
         debug("INFO", "Device {} has disconnected.".format(self.id))
@@ -272,50 +289,51 @@ class TuyaDevice(EventEmitter):
             if msg_obj.get('status') != 'sent':
                 raise Exception('The first queue message object is NOT in "sent" state. State: {}'.format(msg_obj.get('status')))
             callback = msg_obj.get('callback')
-            callback(reply)
+            callback(None, reply)
             self.emit('_next')
-
-#    def writable(self):
-#        is_writeable = len(self.command_queue) > 0 and self.command_queue[0].get('status') == 'waiting'
-#        debug("DBUG", "Checking if socket IS WRITEABLE ({}:{}): {}".format(self.connection.fd, self.id, is_writeable))
-#        return is_writeable
-
-#    def handle_write(self):
-#        debug("INFO", "Socket {} for device's {} IS IN WRITEABLE STATE".format(self.connection.fd, self.id))
 
     def set_status(self, value, callback=DO_NOTHING):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
-        debug("DBUG", "Getting device status to {} (IP: {}, PORT: {}, GW_ID: {})".format(value, self.ip, self.port, self.gw_id))
-        def set_callback(reply):
-            debug("DBUG", "Got device {} status after SET:".format(self.gw_id), reply)
-            status = reply.get('dps').get(self.dps)
-            self.emit('status_update', status, 'set')
-            return callback(status)
+        debug("DBUG", "Setting Tuya device status to {} (IP: {}, PORT: {}, GW_ID: {})".format(value, self.ip, self.port, self.gw_id))
 
         return self.send_command(7, {
             'gwId':  self.gw_id,
             'devId': self.gw_id,
             'dps':   {str(self.dps): value},
             'uid':   self.gw_id,
-        }, set_callback)
+        }, lambda err, reply: self._set_status_callback(err, reply, callback))
+
+    def _set_status_callback(self, err, reply, callback):
+        if err:
+            debug("DBUG", "Error setting device {} status:".format(self.gw_id), err)
+            return callback(err, None)
+        debug("DBUG", "Got device {} status after SET:".format(self.gw_id), reply)
+        status = reply.get('dps').get(self.dps)
+        self.emit('status_update', status, 'set')
+        return callback(None, status)
 
     def get_status(self, callback=DO_NOTHING, origin='UNKWNOWN'):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
-        debug("DBUG", "Getting device status (IP: {}, PORT: {}, GW_ID: {})".format(self.ip, self.port, self.gw_id))
-        def get_callback(reply):
-            debug("DBUG", "Got device {} status:".format(self.gw_id), reply)
-            status = reply.get('dps').get(self.dps)
-            self.emit('status_update', status, origin)
-            return callback(status)
+        debug("DBUG", "Getting Tuya device status (IP: {}, PORT: {}, GW_ID: {})".format(self.ip, self.port, self.gw_id))
 
         return self.send_command(7, {
             'gwId':  self.gw_id,
             'devId': self.gw_id,
             'dps':   {str(self.dps): None},
             'uid':   self.gw_id,
-        }, get_callback)
+        }, lambda err, reply: self._get_status_callback(err, reply, callback, origin))
+
+    def _get_status_callback(self, err, reply, callback, origin):
+        if err:
+            debug("ERRO", "Error getting Tuya device {} status:".format(self.gw_id), err)
+            return callback(err, None)
+
+        debug("DBUG", "Got device {} status:".format(self.gw_id), reply)
+        status = reply.get('dps').get(self.dps)
+        self.emit('status_update', status, origin)
+        return callback(None, status)
 
     def _serialise_message(self, message):
         command = message.get('command')
@@ -439,6 +457,9 @@ class TuyaDevice(EventEmitter):
             data = self.connection.receive(num_bytes)
         except socket.timeout as e:
             return None
+        except socket.error as e:
+            if e.errno == 35: # Resource temporarily unavailable
+                return None
         self.buffer.extend(data)
 
         # Check again

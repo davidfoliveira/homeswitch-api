@@ -1,9 +1,12 @@
 import asyncore
+from errno import EALREADY, EINPROGRESS, EWOULDBLOCK, ECONNRESET, EINVAL, \
+     ENOTCONN, ESHUTDOWN, EINTR, EISCONN, EBADF, ECONNABORTED, EPIPE, EAGAIN
 from pymitter import EventEmitter
 import socket
 import sys
 import traceback
 
+from ..asyncorepp import set_timeout, cancel_timeout
 from ..util import debug, DO_NOTHING
 
 
@@ -16,6 +19,7 @@ from ..util import debug, DO_NOTHING
 class AsyncSocketClient(EventEmitter):
     def __init__(self, buf_size=1024):
         EventEmitter.__init__(self)
+        self.fd = None
         self.ip = None
         self.port = None
         self.timeout = None
@@ -29,9 +33,8 @@ class AsyncSocketClient(EventEmitter):
     def connect(self, ip, port, timeout=None):
         self.ip = ip
         self.port = port
-        self.timeout = timeout
         self.connecting = True
-        self.socket = AsyncSocketClientNative(ip, port, timeout)
+        self.socket = AsyncSocketClientNative(ip, port)
         self.fd = self.socket.socket.fileno()
         self.socket.on('connect', self._on_connect)
         self.socket.on('close', self._on_close)
@@ -39,7 +42,15 @@ class AsyncSocketClient(EventEmitter):
         self.socket.on('error', self._on_error)
         self.socket.on('read', self._on_read)
         self.socket.on('write', self._on_write)
+
+        # Connect
         self.socket.start()
+
+        # Set a timeout
+        self.timeout = None
+        if timeout is not None:
+            debug("DBUG", "Setting socket timeout to {}".format(timeout))
+            self.timeout = set_timeout(self._on_timeout, timeout)
 
     def disconnect(self):
         if self.connected:
@@ -60,9 +71,19 @@ class AsyncSocketClient(EventEmitter):
 
     def _on_connect(self):
         debug("INFO", "Connected to {}:{} !".format(self.ip, self.port))
+        if self.timeout is not None:
+            cancel_timeout(self.timeout)
         self.connecting = False
         self.connected = True
         self.emit('connect')
+
+    def _on_timeout(self):
+        debug("WARN", "Timeout connecting to {}:{}!".format(self.ip, self.port))
+        self.connected = False
+        self.connecting = False
+        if self.socket and self.socket.socket:
+            self.socket.close()
+        self.emit('timeout')
 
     def _on_close(self):
         debug("INFO", "Connection to {}:{} was closed.".format(self.ip, self.port))
@@ -91,18 +112,29 @@ class AsyncSocketClient(EventEmitter):
 
 
 class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
-    def __init__(self, host, port, timeout=None):
+    def __init__(self, host, port):
         self._host = host
         self._port = port
         asyncore.dispatcher.__init__(self)
         EventEmitter.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        if timeout is not None:
-            debug("DBUG", "Setting socket timeout to {}".format(timeout))
-            self.socket.settimeout(timeout)
 
     def start(self):
         self.connect((self._host, self._port))
+
+    def connect(self, address):
+        self.connected = False
+        self.connecting = True
+        err = self.socket.connect_ex(address)
+        if err in (EINPROGRESS, EALREADY, EWOULDBLOCK) \
+        or err == EINVAL and os.name in ('nt', 'ce'):
+            self.addr = address
+            return
+        if err in (0, EISCONN):
+            self.addr = address
+            self.handle_connect_event()
+        else:
+            raise socket.error(err, errorcode[err])
 
     # Handle the connect event
     def handle_connect(self):
@@ -137,4 +169,4 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
 
     # Check if socket is writeable
     def writable(self):
-        return False
+        return not self.connected

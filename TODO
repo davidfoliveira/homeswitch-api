@@ -1,28 +1,32 @@
 # TODO
 
 Needs:
-- Remove ids from github
 - Add support for command/response IDs as it's not really possible to guarantee sequential order on a stream of events
+  - On hybridserver proto
+  - On tuya commands?
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
-- Manage better handle_read() - instead of doing a while True: which will eventually timeout on a socket.read(), make it call the handle_read function over and over again to sinalise new data
-- Support for command timeout (to avoid commands from being sent too late)
+- Support for tuya command timeout (to avoid commands from being sent too late)
+
 - Support for not queuing similar status update commands
+	- Or support for fulfilling all get_status() at once
 
 Majors:
-- Notify multiple device status changes in one message when they happen at the same time
+- Define command retry policy - try with another connection? How many attempts?
 
 Improvements:
 - Think about adding support for a class which does the socket messaging with buffering
+- Notify multiple device status changes in one message when they happen at the same time
 
 Minors:
 - Evaluate whether we should destroy the hardware module or not when hardware metadata changes
 
+Later:
+- Implement "/api/device/discovery" with {new} and {lost}
 
 Issues:
 Check instability - might be related to OSX issue with ARP:
 - https://github.com/davidfoliveira/homeswitch-api/issues/1 # Fix attempt to send item that is not in `waiting` state - ongoing, added logging and changed a few things to change the status of `sent` to `waiting` in case of disconnect
 - https://github.com/davidfoliveira/homeswitch-api/issues/2 # Fix or handle `Operation timed out` on connect
-- https://github.com/davidfoliveira/homeswitch-api/issues/3 # Fix or handle "timeout: timed out" on send()
 - https://github.com/davidfoliveira/homeswitch-api/issues/4 # Check `[Errno 64] EHOSTDOWN` issue on connect()
 - https://github.com/davidfoliveira/homeswitch-api/issues/5 # Check `Connection reset by peer` and handle it
-- https://github.com/davidfoliveira/homeswitch-api/issues/6 # Fix infinite loop of "Should be read", Disconnect - ongoing, added logging ee7cbb4fa55cea8fc2edddf0abeba071fd3ce56c
+- https://github.com/davidfoliveira/homeswitch-api/issues/13 # Don't read infinitely

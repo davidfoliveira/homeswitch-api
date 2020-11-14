@@ -2,3 +2,4 @@ env/
 conf/hslookupd.json
 conf/hsapid.json
 *.pyc
+packages/*

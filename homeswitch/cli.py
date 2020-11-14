@@ -14,7 +14,7 @@ def send_test_request():
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	s.connect(("127.0.0.1", 7776))
 #	s.send(proto.serialise({'method': 'get'}))
-	s.send(proto.serialise({'method': 'set', 'switches': {'bf5d0abdb1e6210180duku': False}}))
+	s.send(proto.serialise({'method': 'set', 'switches': {'bf5d0abdb1e6210180duku': True}}))
 
 	buf = bytearray(0)
 	while True:

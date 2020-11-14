@@ -1,6 +1,7 @@
 import asyncorepp
 import json
 import time
+import traceback
 
 from hybridserver import HybridServer
 
@@ -58,7 +59,10 @@ class HomeSwitchAPI(object):
                 status = req.body.get('switches').get('bf5d0abdb1e6210180duku')
                 self.devices['bf5d0abdb1e6210180duku'].set_status(status)
         except Exception as e:
-            return client.message({'error': 'internal', 'description': str(e)})
+            err = {'error': 'internal', 'description': str(e)}
+            if self.debug:
+                err['stacktrace'] = traceback.format_exc()
+            return client.message(err)
 
 
     def on_http_request(self, client, req, error):
@@ -80,11 +84,20 @@ class HomeSwitchAPI(object):
 #            self.devices = req.post_data
 
     def get(self, client, req):
-            def reply(results):
+            errors = []
+            def reply(err, results):
+                if err:
+                    debug("ERRO", "Error getting device statuses: ", err)
+                    return client.message(err)
+                if len(errors) > 0:
+                    debug("WARN", "Found the following errors while getting the status of each device:", errors)
+
+                print("RES: ", results)
                 response = {'devices': {}, 'ok': True}
                 for res in results:
-                    dev, status = res
-                    response['devices'][dev.id] = {
+                    dev_id, status = res
+                    dev = self.devices[dev_id]
+                    response['devices'][dev_id] = {
                         'metadata': dev.metadata,
                         'status': status,
                     }
@@ -102,7 +115,13 @@ class HomeSwitchAPI(object):
 
             debug("INFO", "Getting status for devices:", devices)
 
-            async.each(devices, lambda dev_id, callback: self.devices[dev_id].get_status(callback, origin='request'), reply)
+            def _get_each_dev_status(dev_id, callback):
+                def _on_dev_reply(err, status):
+                    if err:
+                        errors.append(err)
+                    callback(None, dev_id, None if err else status)
+                self.devices[dev_id].get_status(_on_dev_reply, origin='request')
+            async.each(devices, _get_each_dev_status, reply)
 
 
     def run(self):

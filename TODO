@@ -6,6 +6,7 @@ Needs:
   - On tuya commands?
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
 - Support for tuya command timeout (to avoid commands from being sent too late)
+- Make {set} get a reply even in case the device doesn't change status
 
 - Support for not queuing similar status update commands
 	- Or support for fulfilling all get_status() at once

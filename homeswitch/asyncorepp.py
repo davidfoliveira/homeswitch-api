@@ -95,6 +95,8 @@ def _check_timers():
             call()
         except Exception as e:
             debug("ERRO", "Exception running interval callback for timer {}: ".format(timer_id), e)
+            import traceback
+            traceback.print_exc()
 
 
 def set_timeout(callback, timeout):
@@ -122,8 +124,14 @@ def set_interval(callback, timeout):
 
 
 def cancel_timeout(timer_id):
+    if timer_id not in TIMERS:
+        debug("WARN", "Trying to cancel timeout timer {} which doesn't exist. This should be fixed".format(timer_id))
+        return
     del TIMERS[timer_id]
 
 
 def cancel_interval(timer_id):
+    if timer_id not in TIMERS:
+        debug("WARN", "Trying to cancel interval timer {} which doesn't exist. This should be fixed".format(timer_id))
+        return
     del TIMERS[timer_id]

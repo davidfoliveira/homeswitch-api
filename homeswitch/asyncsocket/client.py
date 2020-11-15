@@ -26,6 +26,7 @@ class AsyncSocketClient(EventEmitter):
         self.socket = None
         self.connected = False
         self.connecting = False
+        self.error = None
         self.buffer = bytearray()
         pass
 
@@ -44,13 +45,16 @@ class AsyncSocketClient(EventEmitter):
         self.socket.on('write', self._on_write)
 
         # Connect
-        self.socket.start()
+        try:
+            self.socket.start()
+        except Exception as e:
+            return self._on_failure(e)
 
         # Set a timeout
         self.timeout = None
         if timeout is not None:
             debug("DBUG", "Setting socket timeout to {}".format(timeout))
-            self.timeout = set_timeout(self._on_timeout, timeout)
+            self.timeout = set_timeout(lambda: self._on_failure({'error': 'timeout'}), timeout)
 
     def disconnect(self):
         if self.connected:
@@ -77,13 +81,13 @@ class AsyncSocketClient(EventEmitter):
         self.connected = True
         self.emit('connect')
 
-    def _on_timeout(self):
-        debug("WARN", "Timeout connecting to {}:{}!".format(self.ip, self.port))
-        self.connected = False
+    def _on_failure(self, ex):
+        debug("ERRO", "Error connecting to {}:{}".format(self.ip, self.port), ex)
         self.connecting = False
+        self.connected = False
         if self.socket and self.socket.socket:
             self.socket.close()
-        self.emit('timeout')
+        self.emit('failure', ex)
 
     def _on_close(self):
         debug("INFO", "Connection to {}:{} was closed.".format(self.ip, self.port))
@@ -115,6 +119,8 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
     def __init__(self, host, port):
         self._host = host
         self._port = port
+        self._error = None
+        self._connect_called = False
         asyncore.dispatcher.__init__(self)
         EventEmitter.__init__(self)
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -122,22 +128,26 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
     def start(self):
         self.connect((self._host, self._port))
 
-    def connect(self, address):
-        self.connected = False
-        self.connecting = True
-        err = self.socket.connect_ex(address)
-        if err in (EINPROGRESS, EALREADY, EWOULDBLOCK) \
-        or err == EINVAL and os.name in ('nt', 'ce'):
-            self.addr = address
-            return
-        if err in (0, EISCONN):
-            self.addr = address
-            self.handle_connect_event()
-        else:
-            raise socket.error(err, errorcode[err])
+    # def connect(self, address):
+    #     self.connected = False
+    #     self.connecting = True
+    #     err = self.socket.connect_ex(address)
+    #     if err in (EINPROGRESS, EALREADY, EWOULDBLOCK) \
+    #     or err == EINVAL and os.name in ('nt', 'ce'):
+    #         self.addr = address
+    #         return
+    #     if err in (0, EISCONN):
+    #         self.addr = address
+    #         self.handle_connect_event()
+    #     else:
+    #         raise socket.error(err, errorcode[err])
 
     # Handle the connect event
     def handle_connect(self):
+        if self._connect_called:
+            debug("WARN", "handle_connect() on connection to {}:{} was already called. Something's wrong here")
+            return
+        self._connect_called = True
         self.emit('connect')
 
     # Handle the connect event
@@ -150,6 +160,7 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
 
     # Handle an error
     def handle_error(self):
+        self._error = True
         import sys
         import traceback
         t, v, tb = sys.exc_info()
@@ -169,4 +180,4 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
 
     # Check if socket is writeable
     def writable(self):
-        return not self.connected
+        return not self.connected and not self._error and not self._connect_called

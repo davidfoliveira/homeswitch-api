@@ -89,7 +89,8 @@ class TuyaDevice(EventEmitter):
         # Creates the connection object and sets event handlers
         self.connection = AsyncSocketClient()
         self.connection.on('connect', self._on_dev_connect)
-        self.connection.on('timeout', self._on_dev_connection_timeout)
+        self.connection.on('failure', self._on_dev_connection_failure)
+        self.connection.on('timeout', self._on_dev_connection_failure)
         self.connection.on('break', self._on_dev_connection_break)
         self.connection.on('disconnect', self._on_dev_disconnect)
         self.connection.on('exception', self._on_dev_exception)
@@ -189,6 +190,7 @@ class TuyaDevice(EventEmitter):
             'callback': callback,
         })
         # If not connected and not connecting, connect! Connect will take care of processing the queue
+        debug("DBUG", "Device {} Connecting={}, Connected={}".format(self.id, self.connecting, self.connected))
         if not self.connected and not self.connecting:
             return self._connect()
         # If connected but the queue was empty, start processing it
@@ -225,8 +227,8 @@ class TuyaDevice(EventEmitter):
         self.connecting = False
         self.emit('_next')
 
-    def _on_dev_connection_timeout(self):
-        debug("WARN", "Timed out while connecting to Tuya device {}.".format(self.id))
+    def _on_dev_connection_failure(self, ex):
+        debug("WARN", "Failure while connecting to Tuya device {}:".format(self.id), ex)
         self.connecting = False
         self.connected = False
         # If persistent connections are on, keep trying to connect...
@@ -238,7 +240,7 @@ class TuyaDevice(EventEmitter):
         while len(self.command_queue) > 0:
             msg_obj = self.command_queue.pop(0)
             callback = msg_obj.get('callback')
-            callback({'error': 'Timeout while trying to connect to device {}'.format(self.id)}, None)
+            callback({'error': 'Failure connecting to device {}'.format(self.id)}, None)
 
     def _on_dev_connection_break(self):
         debug("INFO", "Device {} has disconnected.".format(self.id))

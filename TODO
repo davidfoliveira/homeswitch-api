@@ -1,11 +1,11 @@
-# TODO
+ # TODO
 
 Needs:
+- Support for tuya command timeout (to avoid commands from being sent too late in case of failure)
 - Add support for command/response IDs as it's not really possible to guarantee sequential order on a stream of events
   - On hybridserver proto
   - On tuya commands?
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
-- Support for tuya command timeout (to avoid commands from being sent too late)
 - Make {set} get a reply even in case the device doesn't change status
 
 - Support for not queuing similar status update commands
@@ -15,8 +15,11 @@ Majors:
 - Define command retry policy - try with another connection? How many attempts?
 
 Improvements:
-- Think about adding support for a class which does the socket messaging with buffering
 - Notify multiple device status changes in one message when they happen at the same time
+- Encryption support
+- User identification
+- Proto authorization (http=gets only, native=everything, etc...)
+- User authorization
 
 Minors:
 - Evaluate whether we should destroy the hardware module or not when hardware metadata changes
@@ -27,5 +30,4 @@ Later:
 Issues:
 Check instability - might be related to OSX issue with ARP:
 - https://github.com/davidfoliveira/homeswitch-api/issues/1 # Fix attempt to send item that is not in `waiting` state - ongoing, added logging and changed a few things to change the status of `sent` to `waiting` in case of disconnect
-- https://github.com/davidfoliveira/homeswitch-api/issues/4 # Check `[Errno 64] EHOSTDOWN` issue on connect()
 - https://github.com/davidfoliveira/homeswitch-api/issues/13 # Don't read infinitely

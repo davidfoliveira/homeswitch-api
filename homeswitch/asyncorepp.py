@@ -22,63 +22,11 @@ def loop(timeout=1, use_poll=False, map=None, count=None):
         while map:
             poll_fun(timeout, map)
             _check_timers()
-
     else:
         while map and count > 0:
             poll_fun(timeout, map)
             _check_timers()
             count = count - 1
-
-
-def poll(timeout=0.0, map=None):
-    if map is None:
-        map = asyncore.socket_map
-    if map:
-        print("MAP: ", map)
-        r = []; w = []; e = []
-        for fd, obj in map.items():
-            is_r = obj.readable()
-            is_w = obj.writable()
-            if is_r:
-                r.append(fd)
-            # accepting sockets should not be writable
-            if is_w and not obj.accepting:
-                w.append(fd)
-            if is_r or is_w:
-                e.append(fd)
-        if [] == r == w == e:
-            time.sleep(timeout)
-            return
-
-        try:
-            r, w, e = select.select(r, w, e, timeout)
-        except select.error, err:
-            if err.args[0] != EINTR:
-                raise
-            else:
-                return
-
-        for fd in r:
-            print("READ {}".format(fd))
-            obj = map.get(fd)
-            if obj is None:
-                continue
-            asyncore.read(obj)
-
-        for fd in w:
-            print("WRITE {}".format(fd))
-            obj = map.get(fd)
-            if obj is None:
-                continue
-            asyncore.write(obj)
-
-        for fd in e:
-            print("E {}".format(fd))
-            obj = map.get(fd)
-            if obj is None:
-                continue
-            asyncore._exception(obj)
-
 
 
 def _check_timers():
@@ -108,7 +56,7 @@ def set_timeout(callback, timeout):
     TIMERS[timer_id] = {
         'when': time.time() + timeout,
         'what': call_and_expire,
-        'interval': None
+        'interval': None,
     }
     return timer_id
 
@@ -118,7 +66,7 @@ def set_interval(callback, timeout):
     TIMERS[timer_id] = {
         'when': time.time() + timeout,
         'what': callback,
-        'interval': timeout
+        'interval': timeout,
     }
     return timer_id
 

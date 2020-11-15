@@ -9,16 +9,19 @@ import socket
 import sys
 import time
 import traceback
+import uuid
 
+from ..asyncorepp import set_timeout
 from ..asyncsocket.client import AsyncSocketClient
-from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, debug, dict_diff, DO_NOTHING, bin2hex_sep
+from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, UInt32BE, debug, dict_diff, DO_NOTHING, bin2hex_sep
+from ..syncproto import SyncProto
 
 Crypto = None
 CMD_CONTROL = 7
 PROTOCOL_VERSION_BYTES_31 = b'3.1'
 PROTOCOL_VERSION_BYTES_33 = b'3.3'
 HEADER_SIZE = 16
-PREFIX = "000055aa00000000000000"
+PREFIX = "000055aa00000000"
 SUFFIX = "000000000000aa55"
 
 
@@ -76,6 +79,7 @@ class TuyaDevice(EventEmitter):
         self.ip = config.get('ip', hw_metadata.get('ip', None))
         self.port = config.get('port', 6668)
         self.socket_timeout = config.get('socket_timeout', 10)
+        self.command_timeout = config.get('command_timeout', 5)
         self.version = float(hw_metadata.get('version', '3.3'))
         self.active = hw_metadata.get('active', None)
         self.ablilty = hw_metadata.get('ablilty', None)
@@ -95,28 +99,26 @@ class TuyaDevice(EventEmitter):
         self.connection.on('disconnect', self._on_dev_disconnect)
         self.connection.on('exception', self._on_dev_exception)
         self.connection.on('error', self._on_dev_error)
-        self.connection.on('data', self._on_dev_data)
 
         self.connected = False
         self.connecting = False
-        self.command_queue = []
-        self.buffer = bytearray()
+        self.sync_proto = SyncProto(
+            self.connection,
+            self._encode_and_send_message,
+            self._read_and_parse_message,
+        )
+        self.sync_proto.on('drain', self._on_dev_send_drain)
+        self.sync_proto.on('send_error', self._on_dev_send_error)
+        self.sync_proto.on('receive_error', self._on_dev_recv_error)
 
         # When IP address changes
         self.on('_ip', self._on_ip_change)
-        # When a command can be sent
-        self.on('_next', self._on_can_send_next_command)
 
         # Connect to the device right away if persistent_connections is ON
         if self.gw_id and self.ip:
             self.emit('_ip')
 
     def _on_ip_change(self):
-
-        # Do we have anything on the command queue? Ensure the status of it is 'waiting' so we can resend it
-        if len(self.command_queue) > 0 and self.command_queue[0]['status'] == 'sent':
-            self.command_queue[0]['status'] = 'waiting'
-
         # If connected, disconnect (we will connect to the new IP in case there's something in the queue or persistent_connections are on)
         self._disconnect()
 
@@ -125,33 +127,11 @@ class TuyaDevice(EventEmitter):
             if self.persistent_connections:
                 debug("INFO", "Connecting to the device as persistent_connections is ON")
                 self._connect()
-            elif len(self.command_queue) > 0:
+            elif not self.sync_proto.is_dry():
                 self._connect()
             if self.get_status_on_start:
                debug("INFO", "Getting device's status on start...")
                self.get_status(origin='online')
-
-    def _on_can_send_next_command(self):
-        debug("DBUG", "We can send next command for {}!!!".format(self.id))
-        if len(self.command_queue) > 0:
-            debug("DBUG", "Sending to {}...".format(self.id))
-            if self.command_queue[0].get('status') == 'waiting':
-                bin_message = self._serialise_message(self.command_queue[0])
-                try:
-                    self.connection.send(bin_message)
-                except socket.error as e:
-                    debug("DBUG", "Error sending message to device {}: ".format(self.id), e)
-                    if e.errno in (41): # might mean the device went away, we need to reconnect and retry
-                        return self._reconnect()
-                self.command_queue[0]['status'] = 'sent'
-            else:
-                debug("WARN", "I was told I could process the next queued item but the item is not in 'waiting' state")
-        else:
-            debug("DBUG", "No more commands in the queue...".format(self.id))
-            if not self.persistent_connections:
-                debug("INFO", "Disconnecting as command queue is empty")
-                self._disconnect()
-
 
     def update(self, hw_metadata={}):
         ip = hw_metadata.get('ip', None)
@@ -183,31 +163,29 @@ class TuyaDevice(EventEmitter):
                 self.emit('_ip')
 
     def send_command(self, command, payload, callback):
-        self.command_queue.append({
-            'command': command,
-            'payload': payload,
-            'status': 'waiting',
-            'callback': callback,
-        })
+        was_dry = self.sync_proto.is_dry()
+        self.sync_proto.append(
+            message={'command': command, 'payload': payload},
+            callback=callback,
+            timeout=self.command_timeout
+        )
+
         # If not connected and not connecting, connect! Connect will take care of processing the queue
         debug("DBUG", "Device {} Connecting={}, Connected={}".format(self.id, self.connecting, self.connected))
         if not self.connected and not self.connecting:
             return self._connect()
+
         # If connected but the queue was empty, start processing it
-        if self.connected and len(self.command_queue) == 1:
-            return self.emit('_next')
+        if self.connected and was_dry:
+            return self.sync_proto.go()
 
     def _connect(self):
         debug("DBUG", "IP: {}, PORT: {}, GW_ID: {}".format(self.ip, self.port, self.gw_id))
         if self.ip and self.port and self.gw_id and self.key:
             debug("INFO", "Connecting to Tuya device {} at {}:{}...".format(self.id, self.ip, self.port))
-#            try:
             self.connecting = True
             self.connection.connect(self.ip, self.port, timeout=self.socket_timeout)
             debug("DBUG", "Connection to Tuya device {} at {}:{} for file descriptor {}".format(self.id, self.ip, self.port, self.connection.fd))
-#            except Exception as ex:
-#                debug("ERRO", "Error connecting to device {} at {}:{}: {}".format(self.id, self.ip, self.port, ex))
-#                self._disconnect()
         else:
             debug("WARN", "Cannot connect because of not having an ip, port, device id or key")
 
@@ -218,6 +196,7 @@ class TuyaDevice(EventEmitter):
             self.connection.disconnect()
 
     def _reconnect(self):
+        debug("INFO", "Reconnecting to {}...".format(self.id))
         self._disconnect()
         self._connect()
 
@@ -237,20 +216,15 @@ class TuyaDevice(EventEmitter):
 
         # Otherwise, return an error to each command in the queue
         # TODO: change me according to retry policy. Some parts of the code retry forever, others fail immediately
-        while len(self.command_queue) > 0:
-            msg_obj = self.command_queue.pop(0)
-            callback = msg_obj.get('callback')
-            callback({'error': 'Failure connecting to device {}'.format(self.id)}, None)
+        self.sync_proto.flush(
+            {'error': 'connect_timeout', 'description': 'Failure connecting to device {}'.format(self.id)},
+            None
+        )
 
     def _on_dev_connection_break(self):
         debug("INFO", "Device {} has disconnected.".format(self.id))
-        # If the connection broke while we were waiting for a reply, change it's status to 'waiting' so it can be resent
-        if len(self.command_queue) > 0 and self.command_queue[0].get('status') == 'sent':
-            self.command_queue[0]['status'] = 'waiting'
-
         if self.connected:
-            debug("INFO", "Reconnecting to {}...".format(self.id))
-            self._reconnect()
+            set_timeout(self._reconnect, 1)
 
     def _on_dev_disconnect(self):
         debug("INFO", "Successfully disconnected from device {}".format(self.id))
@@ -262,37 +236,21 @@ class TuyaDevice(EventEmitter):
         debug("ERRO", "Socket error on device's {} connection:".format(self.id), traceback.format_exception(*sys.exc_info()))
         self._disconnect()
 
-    def _on_dev_data(self):
-        debug("INFO", "Socket for device's {} has data and should be read".format(self.id))
-        while self.connected:
-            try:
-                reply = self._read_and_parse_message()
-                if reply is None:
-#                    print("Message is NONE")
-                    return
-                if type(reply) is str and reply == '':
-#                    print("Message is empty")
-                    continue
-                if type(reply) is not dict:
-#                    print("Message is weird")
-                    raise Exception('Unexpected message type: {}'.format(type(reply)))
-            except ValueError as e:
-                debug("ERRO", "Error reading and parsing message:", e)
-                debug("WARN", "Marking connection as unhealthy. Reconnecting and resending message!")
-                if len(self.command_queue) > 0:
-                    msg_obj = self.command_queue[0]
-                    if msg_obj.get('status') != 'sent':
-                        raise Exception('The first queue message object is NOT in "sent" state. State: {}. Oh god...'.format(msg_obj.get('status')))
-                    msg_obj['status'] = 'waiting'
-                self._reconnect()
+    def _on_dev_send_drain(self):
+        debug("INFO", "Tuya device {} send queue has drained".format(self.id))
+        if not self.persistent_connections:
+            debug("INFO", "Disconnecting as command queue is empty")
+            self._disconnect()
 
-            # Get the sent message object and call its callback
-            msg_obj = self.command_queue.pop(0)
-            if msg_obj.get('status') != 'sent':
-                raise Exception('The first queue message object is NOT in "sent" state. State: {}'.format(msg_obj.get('status')))
-            callback = msg_obj.get('callback')
-            callback(None, reply)
-            self.emit('_next')
+    def _on_dev_send_error(self, err):
+        debug("DBUG", "Tuya device {} send error".format(self.id), err)
+        if err.errno in (41): # might mean the device went away, we need to reconnect and retry
+            return self._reconnect()
+
+    def _on_dev_recv_error(self, err):
+        debug("INFO", "Tuya device {} receive error".format(self.id), err)
+        debug("WARN", "Marking connection as unhealthy. Reconnecting and resending message!")
+        self._reconnect()
 
     def set_status(self, value, callback=DO_NOTHING):
         if not self.ip:
@@ -337,15 +295,20 @@ class TuyaDevice(EventEmitter):
         self.emit('status_update', status, origin)
         return callback(None, status)
 
+    def _encode_and_send_message(self, message):
+        return self.connection.send(self._serialise_message(message))
+
     def _serialise_message(self, message):
         command = message.get('command')
         payload = message.get('payload')
+        sequence_num = message.get('sequenceN', 0)
 
         command_hb = hex(command)[2:]
         if command < 16:
             command_hb = '0{}'.format(command_hb)
         if 't' not in payload:
             payload['t'] = str(int(time.time()))
+        print("CMD: ", command_hb)
 
         # Serialise the payload and clean it up
         json_payload = json.dumps(payload)
@@ -363,21 +326,25 @@ class TuyaDevice(EventEmitter):
             json_payload = cipher.encrypt(json_payload)
             preMd5String = b'data=' + json_payload + b'||lpv=' + PROTOCOL_VERSION_BYTES_31 + b'||' + self.key
             hexdigest = md5(preMd5String).hexdigest()
-#            m.update()
-#             = m.hexdigest()
             json_payload = PROTOCOL_VERSION_BYTES_31 + hexdigest[8:][:16].encode('latin1') + json_payload
 
         postfix_payload = hex2bin(bin2hex(json_payload) + SUFFIX)
         assert len(postfix_payload) <= 0xff
         postfix_payload_hex_len = '%x' % len(postfix_payload)  # single byte 0-255 (0x00-0xff)
-        buffer = hex2bin(PREFIX + command_hb + '000000' + postfix_payload_hex_len) + postfix_payload
+
+        buffer = bytearray()
+        buffer.extend(hex2bin(PREFIX[0:8]))            # prefix
+        buffer.extend(UInt32BE(sequence_num))          # seq_number
+        buffer.extend(UInt32BE(command))               # command
+        buffer.extend(UInt32BE(len(postfix_payload)))  # payload length
+        buffer.extend(postfix_payload)
         hex_crc = format(binascii.crc32(buffer[:-8]) & 0xffffffff, '08X')
         return buffer[:-8] + hex2bin(hex_crc) + buffer[-4:]
 
-    def _read_and_parse_message(self):
+    def _read_and_parse_message(self, proto):
         # Read the header and parse it
 #        print("READING header from {} ({})".format(self.socket.fileno(), self.id))
-        header = self._read_need(16)
+        header = proto.read(16)
         if header is None:
             return None
 
@@ -393,17 +360,17 @@ class TuyaDevice(EventEmitter):
 
         # Read payload
 #        print("READING payload from {} ({})".format(self.socket.fileno(), self.id))
-        payload = self._read_need(payloadSize - 8)
+        payload = proto.read(payloadSize - 8)
         if payload is None:
-            self._read_put_back(header)
+            proto.put_back(header)
             return None
 
         # Read suffix
 #        print("READING suffix from {} ({})".format(self.socket.fileno(), self.id))
-        suffix = self._read_need(8)
+        suffix = proto.read(8)
         if suffix is None:
-            self._read_put_back(payload)
-            self._read_put_back(header)
+            proto.put_back(payload)
+            proto.put_back(header)
             return None
 
         if suffix[-4:] != hex2bin(SUFFIX[-8:]):

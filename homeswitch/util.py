@@ -25,10 +25,14 @@ def readUInt32BE(data, idx):
 
 
 def writeUInt32BE(data, idx, value):
-    bin_value = struct.pack('>i', value)
+    bin_value = UInt32BE(value)
     for i in range(0, 4):
         data[idx+i] = bin_value[i]
     return bin_value
+
+
+def UInt32BE(value):
+    return struct.pack('>i', value)
 
 
 def debug(type, pattern, *args):

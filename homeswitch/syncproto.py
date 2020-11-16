@@ -106,11 +106,11 @@ class SyncProto(EventEmitter):
     def go(self):
         return self.emit('_next')
 
-    def flush(self, *args):
+    def flush(self, err, reply):
         while len(self.command_queue) > 0:
             cmd = self.command_queue.pop(0)
             if err is not None or reply is not None:
-                cmd.reply(*args)
+                cmd.reply(err, reply)
 
     def append(self, message, callback=DO_NOTHING, timeout=None):
         cmd = SyncProtoCommand(

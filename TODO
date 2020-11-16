@@ -1,18 +1,19 @@
  # TODO
 
 Needs:
-- Support for tuya command timeout (to avoid commands from being sent too late in case of failure)
 - Add support for command/response IDs as it's not really possible to guarantee sequential order on a stream of events
   - On hybridserver proto
   - On tuya commands?
+
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
+- Finish {set} command
 - Make {set} get a reply even in case the device doesn't change status
 
-- Support for not queuing similar status update commands
-	- Or support for fulfilling all get_status() at once
 
 Majors:
 - Define command retry policy - try with another connection? How many attempts?
+  - Implement Tuya retry policy
+
 
 Improvements:
 - Notify multiple device status changes in one message when they happen at the same time
@@ -20,12 +21,16 @@ Improvements:
 - User identification
 - Proto authorization (http=gets only, native=everything, etc...)
 - User authorization
+- Move "get_status_on_start" to device.py instead of being in tuya.py
+
 
 Minors:
 - Evaluate whether we should destroy the hardware module or not when hardware metadata changes
 
+
 Later:
 - Implement "/api/device/discovery" with {new} and {lost}
+
 
 Issues:
 Check instability - might be related to OSX issue with ARP:

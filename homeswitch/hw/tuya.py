@@ -3,7 +3,6 @@ import binascii
 from hashlib import md5
 import json
 import os
-import pyaes  # https://github.com/ricmoo/pyaes
 from pymitter import EventEmitter
 import socket
 import sys
@@ -11,10 +10,12 @@ import time
 import traceback
 import uuid
 
+from ..aes import AESCipher
 from ..asyncorepp import set_timeout
 from ..asyncsocket.client import AsyncSocketClient
 from ..util import hex2bin, bin2hex, int2hex, readUInt32BE, UInt32BE, debug, dict_diff, DO_NOTHING, bin2hex_sep
 from ..syncproto import SyncProto
+
 
 Crypto = None
 CMD_CONTROL = 7
@@ -23,51 +24,6 @@ PROTOCOL_VERSION_BYTES_33 = b'3.3'
 HEADER_SIZE = 16
 PREFIX = "000055aa00000000"
 SUFFIX = "000000000000aa55"
-
-
-class AESCipher(object):
-    def __init__(self, key):
-        self.bs = 16
-        self.key = key
-
-    def encrypt(self, raw, use_base64 = True):
-        # if Crypto:
-        #     raw = self._pad(raw)
-        #     cipher = AES.new(self.key, mode=AES.MODE_ECB)
-        #     crypted_text = cipher.encrypt(raw)
-        # else:
-        _ = self._pad(raw)
-        cipher = pyaes.blockfeeder.Encrypter(pyaes.AESModeOfOperationECB(self.key))
-        crypted_text = cipher.feed(raw)
-        crypted_text += cipher.feed()
-
-        if use_base64:
-            return base64.b64encode(crypted_text)
-        else:
-            return crypted_text
-
-    def decrypt(self, enc, use_base64=True):
-        if use_base64:
-            enc = base64.b64decode(enc)
-
-        # if Crypto:
-        #     cipher = AES.new(self.key, AES.MODE_ECB)
-        #     raw = cipher.decrypt(enc)
-        #     return self._unpad(raw).decode('utf-8')
-        # else:
-        cipher = pyaes.blockfeeder.Decrypter(pyaes.AESModeOfOperationECB(self.key))
-        plain_text = cipher.feed(enc)
-        plain_text += cipher.feed()
-        return plain_text
-
-    def _pad(self, s):
-        padnum = self.bs - len(s) % self.bs
-        return s + padnum * chr(padnum).encode()
-
-    @staticmethod
-    def _unpad(s):
-        return s[:-ord(s[len(s)-1:])]
-
 
 
 class TuyaDevice(EventEmitter):
@@ -119,7 +75,8 @@ class TuyaDevice(EventEmitter):
             self.emit('_ip')
 
     def _on_ip_change(self):
-        # If connected, disconnect (we will connect to the new IP in case there's something in the queue or persistent_connections are on)
+        # If connected, disconnect
+        # We will later connect to the new IP in case there's something in the queue or persistent_connections are on
         self._disconnect()
 
         # Be super sure we can connect
@@ -214,7 +171,7 @@ class TuyaDevice(EventEmitter):
         if self.persistent_connections:
             return self._connect()
 
-        # Otherwise, return an error to each command in the queue
+        # Otherwise, return an error to each command waiting in the queue
         # TODO: change me according to retry policy. Some parts of the code retry forever, others fail immediately
         self.sync_proto.flush(
             {'error': 'connect_timeout', 'description': 'Failure connecting to device {}'.format(self.id)},
@@ -256,7 +213,6 @@ class TuyaDevice(EventEmitter):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
         debug("DBUG", "Setting Tuya device status to {} (IP: {}, PORT: {}, GW_ID: {})".format(value, self.ip, self.port, self.gw_id))
-
         return self.send_command(7, {
             'gwId':  self.gw_id,
             'devId': self.gw_id,
@@ -413,35 +369,6 @@ class TuyaDevice(EventEmitter):
 
         return payload
 
-    def _read_need(self, num_bytes):
-        rv = None
-        # If it available in the buffer?
-        if len(self.buffer) >= num_bytes:
-            rv = self.buffer[0:num_bytes]
-            del self.buffer[0:num_bytes]
-            return rv
-
-        # Read only those bytes into the buffer
-        try:
-            data = self.connection.receive(num_bytes)
-        except socket.timeout as e:
-            return None
-        except socket.error as e:
-            if e.errno == 35: # Resource temporarily unavailable
-                return None
-        self.buffer.extend(data)
-
-        # Check again
-        if len(self.buffer) >= num_bytes:
-            rv = self.buffer[0:num_bytes]
-            del self.buffer[0:num_bytes]
-            return rv
-
-        return None
-
-    def _read_put_back(self, data):
-        self.buffer = bytearray(data) + self.buffer
-
     def _decrypt_json(self, data, base64):
         cipher = AESCipher(self.key)
         payload = cipher.decrypt(str(data), base64)
@@ -452,7 +379,6 @@ class TuyaDevice(EventEmitter):
         except Exception as ex:
             raise Exception('Error parsing decrypted message JSON body. Perhaps the configured key is wrong')
         return payload
-
 
     def __del__(self):
         self._disconnect()
@@ -467,7 +393,6 @@ class TuyaUDPMessage(object):
         self.leftover = leftover
         self.commandByte = commandByte
         self.sequenceN = sequenceN
-
 
 
 class TuyaDeviceListener(EventEmitter):
@@ -485,16 +410,13 @@ class TuyaDeviceListener(EventEmitter):
         self.devices = {}
         self.device_last_seen = {}
 
-
     def get_devices(self):
         return self.devices
-
 
     def start(self):
         debug("INFO", "TuyaDeviceListener: Starting...")
         debug("INFO", "TuyaDeviceListener: Binding on {}:{}".format(self.host, self.port))
         self.socket.bind((self.host, self.port))
-
 
     def loop(self):
         # Just read data from the UDP socket
@@ -502,9 +424,7 @@ class TuyaDeviceListener(EventEmitter):
 
         # Cleanup unseen devices
         change_count += self._cleanup()
-
         return change_count
-
 
     def _read(self):
         # Try to read a message
@@ -525,9 +445,7 @@ class TuyaDeviceListener(EventEmitter):
 #            m.payload['ip'] = m.payload['ip'].replace('.10.', '.11.') # TODO: remove me, just for making connects fail
 #            print("M: ", m)
             change_count += self._process_message(m.payload, address)
-
         return change_count
-
 
     def _process_message(self, message, address):
         dev_id = message.get('gwId')
@@ -547,9 +465,7 @@ class TuyaDeviceListener(EventEmitter):
             if len(diffs) > 0:
                 news_count += 1
         self.device_last_seen[dev_id] = time.time()
-
         return news_count
-
 
     def _cleanup(self):
         now = time.time()
@@ -560,16 +476,13 @@ class TuyaDeviceListener(EventEmitter):
                 del self.device_last_seen[dev_id]
                 del self.devices[dev_id]
                 change_count += 1
-
         return change_count
-
 
     def _parse_messages(self, message):
         if self.key:
             if len(self.key) != 16:
                 raise Exception('Incorrect key format')
         return self.parse_recursive(message, [])
-
 
     def parse_recursive(self, message, packets):
         result = self.parse_packet(message)
@@ -578,7 +491,6 @@ class TuyaDeviceListener(EventEmitter):
         if result.leftover:
             return self.parse_recursive(result.leftover, packets)
         return packets
-
 
     def parse_packet(self, buffer):
         if len(buffer) < 24:

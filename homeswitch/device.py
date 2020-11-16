@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import time
 from importlib import import_module
 from pymitter import EventEmitter
@@ -23,9 +24,11 @@ class Device(EventEmitter):
         self.metadata = config.get('metadata', {})
         self.status_cache = config.get('status_cache', None)
         self.refresh_status = int(config.get('refresh_status', None))
+        self.hold_get_status = config.get('hold_get_status', False)
         self.config = config
         self.hw_metadata = hw_metadata
         self.hw = self._import_device_module(id, hw, config, hw_metadata) if hw else None
+        self.waiting_status = []
 
         # Listen to device's events
         self.hw.on('status_update', self._on_status_update)
@@ -45,7 +48,6 @@ class Device(EventEmitter):
             self.emit('status_update', status, origin)
         else:
             debug("INFO", "Got a status update about device {}. Device status has NOT changed ({})".format(self.id, status))
-
 
     def update(self, **kwargs): #discovery_status=None, switch_status=None, hw_metadata=None):
         if 'discovery_status' in kwargs:
@@ -85,7 +87,9 @@ class Device(EventEmitter):
             debug("INFO", "Serving device {} status from cache...".format(self.id))
             return callback(None, self.switch_status)
 
-        return self.hw.get_status(lambda err, status: self._get_status_callback(err, status, callback), origin)
+        with status_collector(self, callback) as collector_callback:
+            if collector_callback:
+                return self.hw.get_status(lambda err, status: self._get_status_callback(err, status, collector_callback), origin)
 
     def _get_status_callback(self, err, status, callback):
         if err:
@@ -106,7 +110,10 @@ class Device(EventEmitter):
             debug("DBUG", "Device {} is not online. Cannot set its status".format(self.id))
             return callback({'error': 'Device {} is not online. Cannot set its status'.format(self.id)})
 
-        return self.hw.set_status(value, lambda err, status: self._set_status_callback(err, status, value, callback))
+        with status_collector(self, callback, get=False) as collector_callback:
+            print("CC: ", collector_callback)
+            if collector_callback:
+                return self.hw.set_status(value, lambda err, status: self._set_status_callback(err, status, value, collector_callback))
 
     def _set_status_callback(self, err, status, intent, callback):
         if err:
@@ -122,3 +129,36 @@ class Device(EventEmitter):
         if self.discovery_status == 'online':
             debug("INFO", "Updating device {} status...".format(self.id))
             self.get_status(DO_NOTHING, origin='refresh', ignore_cache=True)
+
+
+@contextmanager
+def status_collector(scope, callback, get=True):
+    if not scope.hold_get_status:
+        yield callback
+        return
+
+    def collector_callback(*args):
+        err, status = args[0:2]
+        # Call the first callback with all arguments (it can be a set)
+        callback(*args)
+
+        # Call the other waiting callbacks
+        other_callbacks = list(filter(lambda cb: cb is not None, scope.waiting_status))
+        debug("DBUG", "Serving device {} {} callbacks with the result of a {}".format(scope.id, len(other_callbacks), "get" if get else "set"))
+        while len(other_callbacks) > 0:
+            other_callback = other_callbacks.pop(0)
+            if other_callback:
+                other_callback(err, status)
+        scope.waiting_status = []
+
+    # Add callback to the list of callbacks waiting for status
+    if get:
+        scope.waiting_status.append(None if len(scope.waiting_status) == 0 else callback)
+        if len(scope.waiting_status) == 1:
+            yield collector_callback
+        else:
+            yield None
+    else:
+        scope.waiting_status.append(None)
+        yield collector_callback
+

@@ -1,8 +1,10 @@
+import json
 from pymitter import EventEmitter
 import socket
 import time
 import uuid
 
+from .asyncorepp import set_timeout
 from .util import DO_NOTHING, debug
 
 
@@ -30,8 +32,8 @@ class SyncProto(EventEmitter):
     def _on_disconnect(self):
         # If the connection broke while we were waiting for a reply, change it's status to 'waiting' so it can be resent
         debug("DBUG", "Detected disconnect on socket {}".format(self.id))
-        if len(self.command_queue) > 0 and self.command_queue[0].get('status') == 'sent':
-            self.command_queue[0]['status'] = 'waiting'
+        if len(self.command_queue) > 0 and self.command_queue[0].status == 'sent':
+            self.command_queue[0].status = 'waiting'
 
     def _on_data(self):
         while self.socket.connected:
@@ -47,18 +49,17 @@ class SyncProto(EventEmitter):
             except ValueError as e:
                 debug("ERRO", "Error reading and parsing message:", e)
                 if len(self.command_queue) > 0:
-                    msg_obj = self.command_queue[0]
-                    if msg_obj.get('status') != 'sent':
-                        raise Exception('The first queue message object is NOT in "sent" state. State: {}. Oh god...'.format(msg_obj.get('status')))
-                    msg_obj['status'] = 'waiting'
+                    cmd = self.command_queue[0]
+                    if cmd.status != 'sent':
+                        raise Exception('The first queue message object is NOT in "sent" state. State: {}. Oh god...'.format(cmdstatus))
+                    cmd.status = 'waiting'
                 self.emit('receive_error', e)
 
             # Get the sent message object and call its callback
-            msg_obj = self.command_queue.pop(0)
-            if msg_obj.get('status') != 'sent':
-                raise Exception('The first queue message object is NOT in "sent" state. State: {}'.format(msg_obj.get('status')))
-            callback = msg_obj.get('callback')
-            callback(None, reply)
+            cmd = self.command_queue.pop(0)
+            if cmd.status != 'sent':
+                raise Exception('The first queue message object is NOT in "sent" state. State: {}'.format(cmd.status))
+            cmd.reply(None, reply)
             self.emit('_next')
 
 
@@ -69,11 +70,11 @@ class SyncProto(EventEmitter):
             debug("DBUG", "No more commands in the queue for {}...".format(self.id))
             return self.emit('drain')
 
-        debug("DBUG", "Sending '{}' command to {}...".format(cmd.get('command'), self.id))
-        if cmd.get('status') == 'waiting':
+        debug("DBUG", "Sending '{}' command to {}...".format(cmd.message.get('command'), self.id))
+        if cmd.status == 'waiting':
             try:
-                self.encode_and_send(cmd.get('message'))
-                cmd['status'] = 'sent'
+                self.encode_and_send(cmd.message)
+                cmd.status = 'sent'
             except socket.error as e:
                 debug("DBUG", "Error sending message to device {}: ".format(self.id), e)
                 self.emit('send_error', e)
@@ -83,18 +84,15 @@ class SyncProto(EventEmitter):
     def _get_next_command(self):
         while len(self.command_queue) > 0:
             cmd = self.command_queue[0]
-            print("CMD: ", cmd)
-            print("T: ", time.time())
-            if cmd.get('expires') is not None:
-                if cmd.get('expires') == -1: # already expired and replied
+            if cmd.expires is not None:
+                if cmd.expires == -1: # already expired and replied
                     debug("WARN", "Found an expired and replied command that should have been sent to {}. Ignoring: ".format(self.id), cmd)
                     self.command_queue.pop(0)
                     continue                    
-                if cmd.get('expires') < time.time():
+                if cmd.expires < time.time():
                     debug("WARN", "Found an expired command that should be sent to {}. Ignoring: ".format(self.id), cmd)
                     self.command_queue.pop(0)
-                    callback = cmd.get('callback')
-                    callback({'error': 'command_timeout', 'descriptor': 'Waited too long for the device to respond'}, None)
+                    cmd.reply({'error': 'command_timeout', 'descriptor': 'Was about to process this command but it expired'}, None)
                     continue
             return cmd
         return None
@@ -108,23 +106,28 @@ class SyncProto(EventEmitter):
     def go(self):
         return self.emit('_next')
 
-    def flush(self, err=None, reply=None):
+    def flush(self, *args):
         while len(self.command_queue) > 0:
-            msg_obj = self.command_queue.pop(0)
+            cmd = self.command_queue.pop(0)
             if err is not None or reply is not None:
-                callback = msg_obj.get('callback')
-                callback(err, reply)
+                cmd.reply(*args)
 
     def append(self, message, callback=DO_NOTHING, timeout=None):
-        id = uuid.uuid4()
-        self.command_queue.append({
-            'id': id,
-            'status': 'waiting',
-            'message': message,
-            'callback': callback,
-            'timeout': time.time() + timeout if timeout is not None else None,
-        })
-        return id
+        cmd = SyncProtoCommand(
+            status = 'waiting',
+            message = message,
+            callback = callback,
+            timeout = timeout
+        )
+
+        # Append the command
+        self.command_queue.append(cmd)
+
+        # Set a timeout
+        if timeout:
+            set_timeout(lambda: cmd.reply({'error': 'command_timeout', 'descriptor': 'Waited too long for the device to respond'}, None), timeout)
+
+        return cmd.id
 
     def read(self, num_bytes):
         rv = None
@@ -154,3 +157,32 @@ class SyncProto(EventEmitter):
 
     def put_back(self, data):
         self.buffer = bytearray(data) + self.buffer
+
+
+class SyncProtoCommand(object):
+    def __init__(self, status='unknown', message='', callback=DO_NOTHING, timeout=None):
+        self.id = uuid.uuid4()
+        self.status = status
+        self.message = message
+        self.callback = [callback]
+        self.responded = False
+        self.expires = time.time() + timeout if timeout is not None else None
+
+    def __repr__(self):
+        return json.dumps({
+            'id': str(self.id),
+            'status': self.status,
+            'message': self.message,
+            'callback': '[Function]',
+            'responded': self.responded,
+            'expires': self.expires,
+        })
+
+    def reply(self, *args):
+        if self.responded:
+            debug("DBUG", "Command's {} was already called. Stopping another reply here".format(self.id))
+            return
+        self.responded = True
+        callback = self.callback[0]
+        return callback(*args)
+

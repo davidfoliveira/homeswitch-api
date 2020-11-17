@@ -1,19 +1,23 @@
  # TODO
 
 Needs:
+- Check "command's was already called" in arxxx...
+
 - Add support for command/response IDs as it's not really possible to guarantee sequential order on a stream of events
   - On hybridserver proto
   - On tuya commands?
 
 - Check why sending 2 messages in a row in the cli makes the hybridserver confuse
-- Finish {set} command
 - Make {set} get a reply even in case the device doesn't change status
 
 
 Majors:
+- Timestamp sync at start (will help encryption and security later)
+- Encryption support
 - Define command retry policy - try with another connection? How many attempts?
   - Implement Tuya retry policy
-
+- Support for sending metrics to OpenTSDB
+- Support for proper status change logging
 
 Improvements:
 - Notify multiple device status changes in one message when they happen at the same time

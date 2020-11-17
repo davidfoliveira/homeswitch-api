@@ -105,10 +105,10 @@ class Device(EventEmitter):
         debug("INFO", "Setting device {} status to {}".format(self.id, value))
         if not self.hw:
             debug("DBUG", "Device {} has no assigned hardware. Cannot set its status".format(self.id))
-            return callback({'error': 'Device {} has no assigned hardware. Cannott set its status'.format(self.id)})
+            return callback({'error': 'Device {} has no assigned hardware. Cannott set its status'.format(self.id)}, None)
         if not self.discovery_status == 'online':
             debug("DBUG", "Device {} is not online. Cannot set its status".format(self.id))
-            return callback({'error': 'Device {} is not online. Cannot set its status'.format(self.id)})
+            return callback({'error': 'Device {} is not online. Cannot set its status'.format(self.id)}, None)
 
         with status_collector(self, callback, get=False) as collector_callback:
             print("CC: ", collector_callback)

@@ -10,13 +10,15 @@ from .util import writeUInt32BE, bin2hex
 def send_test_request(args):
 	#create an INET, STREAMing socket
 #	body = json.dumps({'method': 'get'})
-#	body = json.dumps({'method': 'set', 'switches': {'bf5d0abdb1e6210180duku': True}})
+#	body = json.dumps({'method': 'set', 'devices': {'bf5d0abdb1e6210180duku': True}})
+	ip, command = args[0:2]
 
 	s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-	s.connect(("127.0.0.1", 7776))
-	if len(args) > 1 and args[0] == 'set':
-		status = args[1] == 'on'
-		s.send(proto.serialise({'method': 'set', 'switches': {'bf5d0abdb1e6210180duku': status}, 'id': 123}))
+	s.connect((ip, 7776))
+	if command == 'set':
+		device, status = args[2:4]
+		status = status == 'on'
+		s.send(proto.serialise({'method': 'set', 'devices': {device: status}, 'id': 123}))
 	else:
 		s.send(proto.serialise({'method': 'get'}))
 

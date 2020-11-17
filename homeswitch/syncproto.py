@@ -3,6 +3,7 @@ from pymitter import EventEmitter
 import socket
 import time
 import uuid
+import traceback
 
 from .asyncorepp import set_timeout
 from .util import DO_NOTHING, debug
@@ -180,7 +181,8 @@ class SyncProtoCommand(object):
 
     def reply(self, *args):
         if self.responded:
-            debug("DBUG", "Command's {} was already called. Stopping another reply here".format(self.id))
+            debug("WARN", "Command's {} was already called. Stopping another reply here".format(self.id))
+            traceback.print_stack()
             return
         self.responded = True
         callback = self.callback[0]

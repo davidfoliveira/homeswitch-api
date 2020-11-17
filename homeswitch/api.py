@@ -52,12 +52,8 @@ class HomeSwitchAPI(object):
         try:
             if req.method == 'get':
                 return self.get(client, req)
-
             if req.method == 'set':
-#                def reply(dev, status, intent):
-#                    self.server.broadcast({'devices': {dev.id: status}})
-                status = req.body.get('switches').get('bf5d0abdb1e6210180duku')
-                self.devices['bf5d0abdb1e6210180duku'].set_status(status)
+                return self.set(client, req)
         except Exception as e:
             err = {'error': 'internal', 'description': str(e)}
             if self.debug:
@@ -84,45 +80,77 @@ class HomeSwitchAPI(object):
 #            self.devices = req.post_data
 
     def get(self, client, req):
-            errors = []
-            def reply(err, results):
+        # Validate
+        if 'devices' in req.body and type(req.body.get('devices')) != list:
+            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value #1'})
+
+        # If the user didn't ask for a specific device, that means all of them
+        devices = self.devices.keys() if 'devices' not in req.body or len(req.body.get('devices')) == 0 else req.body.get('devices')
+        if type(devices) is not list:
+            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})            
+
+        devices = filter(lambda dev_id: dev_id in self.devices, devices)
+        if len(devices) == 0:
+            return client.message({'error': 'not_found', 'description': 'No devices were found'})
+
+        debug("INFO", "Getting status for devices:", devices)
+
+        errors = []
+        def reply(err, results):
+            if err:
+                debug("ERRO", "Error getting device statuses: ", err)
+                return client.message(err)
+            if len(errors) > 0:
+                debug("WARN", "Found the following errors while getting the status of each device:", errors)
+
+            response = {'devices': {}, 'ok': True}
+            for res in results:
+                dev_id, status = res
+                dev = self.devices[dev_id]
+                response['devices'][dev_id] = {
+                    'metadata': dev.metadata,
+                    'status': status,
+                }
+            client.message(response)
+
+        def _get_each_dev_status(dev_id, callback):
+            def _on_dev_reply(err, status):
                 if err:
-                    debug("ERRO", "Error getting device statuses: ", err)
-                    return client.message(err)
-                if len(errors) > 0:
-                    debug("WARN", "Found the following errors while getting the status of each device:", errors)
+                    errors.append(err)
+                callback(None, dev_id, None if err else status)
+            self.devices[dev_id].get_status(_on_dev_reply, origin='request')
+        async.each(devices, _get_each_dev_status, reply)
 
-                print("RES: ", results)
-                response = {'devices': {}, 'ok': True}
-                for res in results:
-                    dev_id, status = res
-                    dev = self.devices[dev_id]
-                    response['devices'][dev_id] = {
-                        'metadata': dev.metadata,
-                        'status': status,
-                    }
-                client.message(response)
+    def set(self, client, req):
+        # Validate and clean it up
+        if 'devices' in req.body and type(req.body.get('devices')) != dict:
+            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value'})
+        devices = req.body.get('devices')
+        if type(devices) is not dict:
+            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})
+        device_updates = []
+        for dev_id in devices:
+            if dev_id in self.devices and type(devices[dev_id]) is bool:
+                device_updates.append((dev_id, devices[dev_id]))
 
-            # Validate
-            if 'devices' in req.body and type(req.body.get('devices')) != list:
-                return client.message({'error': 'request_error', 'description': 'Invalid devices `field` value'})
+        errors = []
+        def finish(err, results):
+            if err:
+                debug("ERRO", "Error getting device statuses: ", err)
+                return client.message(err)
+            if len(errors) > 0:
+                debug("WARN", "Found the following errors while getting the status of each device:", errors)
 
-            # If the user didn't ask for a specific device, that means all of them
-            devices = self.devices.keys() if 'devices' not in req.body or len(req.body.get('devices')) == 0 else req.body.get('devices')
-            devices = filter(lambda dev_id: dev_id in self.devices, devices)
-            if len(devices) == 0:
-                return client.message({'error': 'not_found', 'description': 'No devices were found'})
+        def _set_each_dev_status(id_status, callback):
+            dev_id, status = id_status
+            def _on_dev_reply(err, status, intent):
+                if err:
+                    errors.append(err)
+                callback(None, dev_id, None if err else status)
+            self.devices[dev_id].set_status(status, _on_dev_reply)
 
-            debug("INFO", "Getting status for devices:", devices)
-
-            def _get_each_dev_status(dev_id, callback):
-                def _on_dev_reply(err, status):
-                    if err:
-                        errors.append(err)
-                    callback(None, dev_id, None if err else status)
-                self.devices[dev_id].get_status(_on_dev_reply, origin='request')
-            async.each(devices, _get_each_dev_status, reply)
-
+        # Set the status of all devices
+        async.each(device_updates, _set_each_dev_status, finish)
 
     def run(self):
         debug("INFO", "Starting API...")

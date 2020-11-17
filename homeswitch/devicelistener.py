@@ -1,8 +1,10 @@
+import base64
 import json
 from importlib import import_module
 from pymitter import EventEmitter
 import os
 import requests
+from requests.auth import HTTPBasicAuth
 from time import sleep, time
 import threading
 
@@ -16,11 +18,14 @@ class DeviceListener(EventEmitter):
         self.running = False
         self.background_run = None
         self.last_sync = time()
+        self.headers = { }
         self.device_types = kwargs.get('device_types', [])
         self.api_url = kwargs.get('api_url', 'http://127.0.0.1:7776')
         self.sync_interval = kwargs.get('sync_interval', 60)
         self.sync_on_changes = kwargs.get('sync_on_changes', True)
         self.sleep_interval = kwargs.get('sleep_interval', 0.1)
+        self.authorization = kwargs.get('authorization', None)
+        self.authorization = HTTPBasicAuth(self.authorization, '') if 'authorization' in kwargs else None
 
         # Create all the listeners
         self.listeners = [ self._create_listener(hw_type, kwargs.get('{}_opts'.format(hw_type), {})) for hw_type in self.device_types ]
@@ -90,7 +95,7 @@ class DeviceListener(EventEmitter):
         if not self.sync_on_changes:
             url = self.api_url + "/api/device/discovery"
             try:
-                res = requests.post(url, json = {'new': {'id': id, 'data': message}})
+                res = requests.post(url, auth=self.authorization, json = {'new': {'id': id, 'data': message}})
             except Exception as e:
                 debug("ERRO", "Failed to call homeswitch-api at {}: {}".format(url, e))
                 return
@@ -104,7 +109,7 @@ class DeviceListener(EventEmitter):
         if not self.sync_on_changes:
             url = self.api_url + "/api/device/discovery"
             try:
-                res = requests.post(url, json = {'lost': {'id': id}})
+                res = requests.post(url, auth=self.authorization, json = {'lost': {'id': id}})
             except Exception as e:
                 debug("ERRO", "Failed to call homeswitch-api at {}: {}".format(url, e))
                 return
@@ -117,7 +122,7 @@ class DeviceListener(EventEmitter):
 
         url = self.api_url + "/api/device/sync"
         try:
-            res = requests.post(url, json = self.get_devices())
+            res = requests.post(url, auth=self.authorization, json = self.get_devices())
         except Exception as e:
             debug("ERRO", "Failed to call homeswitch-api at {}: {}".format(url, e))
             return

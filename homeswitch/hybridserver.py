@@ -1,10 +1,11 @@
+import asyncore
+import base64
 from errno import EALREADY, EINPROGRESS, EWOULDBLOCK, ECONNRESET, EINVAL, \
      ENOTCONN, ESHUTDOWN, EINTR, EISCONN, EBADF, ECONNABORTED, EPIPE, EAGAIN
-import re
-import asyncore
-import socket
 import json
 from pymitter import EventEmitter
+import re
+import socket
 import time
 
 import proto
@@ -13,6 +14,7 @@ from .util import debug, readUInt32BE, writeUInt32BE
 
 HTTP_STATUS_BY_ERROR = {
     'request_error': 400,
+    'auth': 401,
     'not_found': 404,
     'internal': 500,
 }
@@ -20,6 +22,7 @@ HTTP_STATUS_BY_ERROR = {
 HTTP_STATUS_DESCRIPTION = {
     '200': 'OK',
     '400': 'Invalid request',
+    '401': 'Unauthorized',
     '404': 'Not Found',
     '500': 'Internal Server Error',
 }
@@ -61,6 +64,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         self.request = None
         self.proto = None
         self.status = "alive"
+        self.processing = False
         asyncore.dispatcher_with_send.__init__(self, sock)
         EventEmitter.__init__(self)
         # Proxy 'request' event to 
@@ -70,9 +74,12 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         if self.proto == None:
             self.proto = request.proto
         self.server.emit('request', self, request, error)
-        self.request = None
+        self.processing = True
 
     def handle_read(self):
+        if self.processing:
+            self.request = None
+            self.processing = False
         data = None
 
         # If we don't have a request object yet, create it... then just push data into it (it works like a stream)
@@ -107,6 +114,10 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
             self.close()
 
     def message(self, body):
+        proto = "HTTP" if self.proto == "http" else "HS"
+        status = "error/"+body.get('error') if body.get('error', None) else 'ok'
+        user = self.request.get_user() if self.request.get_user() else 'unidentified'
+        debug("INFO", "[Client {}] {}/{} => {}; by {}".format(self.id, proto, self.request, status, user))
         body['when'] = time.time() * 1000
         if self.proto == 3:
             self.send_hs(body)
@@ -187,6 +198,11 @@ class HomeSwitchRequest(EventEmitter):
         self.encryption = header >> 16 & 0xff
         self.req_size = header & 0xffff
 
+    def __repr__(self):
+        return "{}".format(self.method)
+
+    def get_user(self):
+        return self.body.get('user', None)
 
 
 class HTTPRequest(EventEmitter):
@@ -249,5 +265,15 @@ class HTTPRequest(EventEmitter):
                 self.post_data = json.loads(self.post_data)
             except Exception:
                 return self.emit('error')
-
         self.emit('ready')
+
+    def __repr__(self):
+        return "{} {}".format(self.method, self.url)
+
+    def get_user(self):
+        if self.headers.get('authorization', None):
+            try:
+                auth = base64.b64decode(re.sub(r'^basic +', '', self.headers.get('authorization'), flags=re.I))
+                return re.sub(r':.*', '', auth)
+            except Exception as e:
+                return None

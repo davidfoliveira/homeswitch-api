@@ -11,13 +11,14 @@ from .util import debug
 
 
 class HomeSwitchAPI(object):
-    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}):
+    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, require_id=False):
         self.host = host
         self.port = port
         self.debug = debug
         self.server = HybridServer(host=host, port=port)
         self.running = True
         self.devices = devices
+        self.require_id = require_id
         self.server.on('request', self.on_request)
 
         # Initialise devices
@@ -36,19 +37,30 @@ class HomeSwitchAPI(object):
         self.server.broadcast({'devices': {dev_id: {'status': status, 'origin': origin}}})
 
     def on_request(self, client, req, error):
-        if req.proto == 3:
-            debug("DBUG", "[Client {}] Proto {} Request: {}".format(client.id, req.proto, req.method), req.body)
-        else:
+        if req.proto == "http":
             debug("DBUG", "[Client {}] Proto {} Request: {} {}".format(client.id, req.proto, req.method, req.url))
+        else:
+            debug("DBUG", "[Client {}] Proto {} Request: {}".format(client.id, req.proto, req.method), req.body)
 
         # If we had an error parsing the request, just get rid of it now!
         if error:
             return client.message({'error': 'request_error'})
 
+        # Check ID
+        if self.require_id and not self._request_has_valid_auth(client, req):
+            return client.message({'error': 'auth', 'description': 'Valid identification is required'})
+
         # If it's an HTTP request, take care of it separately (because we care about URLs and stuff)
         if req.proto == "http":
             return self.on_http_request(client, req, error)
+        else:
+            return self.on_hs_request(client, req, error)
 
+    def _request_has_valid_auth(self, client, req):
+        user = req.get_user()
+        return user is not None
+
+    def on_hs_request(self, client, req, error):
         try:
             if req.method == 'get':
                 return self.get(client, req)
@@ -74,7 +86,7 @@ class HomeSwitchAPI(object):
                 if dev_id not in req.post_data:
                     self.devices[dev_id].update(discovery_status='offline')
 
-            client.message({'ok': True})
+            return client.message({'ok': True})
 
         client.message({'error': 'not_found'})
 #            self.devices = req.post_data

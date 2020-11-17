@@ -1,7 +1,7 @@
 import binascii
 import struct
 from datetime import datetime
-
+import traceback
 
 def bin2hex(data):
     return binascii.hexlify(data)
@@ -60,3 +60,7 @@ def dict_diff(a, b):
 
 def DO_NOTHING(*args):
     pass
+
+
+def current_stack():
+    return ''.join(traceback.format_stack())

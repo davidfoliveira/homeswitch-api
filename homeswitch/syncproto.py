@@ -3,10 +3,9 @@ from pymitter import EventEmitter
 import socket
 import time
 import uuid
-import traceback
 
-from .asyncorepp import set_timeout
-from .util import DO_NOTHING, debug
+from .asyncorepp import set_timeout, cancel_timeout
+from .util import DO_NOTHING, debug, current_stack
 
 
 class SyncProto(EventEmitter):
@@ -124,10 +123,6 @@ class SyncProto(EventEmitter):
         # Append the command
         self.command_queue.append(cmd)
 
-        # Set a timeout
-        if timeout:
-            set_timeout(lambda: cmd.reply({'error': 'command_timeout', 'descriptor': 'Waited too long for the device to respond'}, None), timeout)
-
         return cmd.id
 
     def read(self, num_bytes):
@@ -168,6 +163,10 @@ class SyncProtoCommand(object):
         self.callback = [callback]
         self.responded = False
         self.expires = time.time() + timeout if timeout is not None else None
+        self.timeout = None
+        self._responded = ''
+        if timeout:
+            self.timeout = set_timeout(lambda: cmd.reply({'error': 'command_timeout', 'descriptor': 'Waited too long for the device to respond'}, None), timeout)
 
     def __repr__(self):
         return json.dumps({
@@ -182,9 +181,16 @@ class SyncProtoCommand(object):
     def reply(self, *args):
         if self.responded:
             debug("WARN", "Command's {} was already called. Stopping another reply here".format(self.id))
-            traceback.print_stack()
+            debug("DBUG", "FIRST CALL:\n{}\n\nSECOND CALL:\n{}\n\n".format(self._responded, current_stack()))
             return
+
         self.responded = True
+        self._responded = current_stack()
+
+        # Stop the timeout
+        if self.timeout:
+            cancel_timeout(self.timeout)
+
         callback = self.callback[0]
         return callback(*args)
 

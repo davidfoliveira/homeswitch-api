@@ -17,14 +17,14 @@ Majors:
 - Define command retry policy - try with another connection? How many attempts?
   - Implement Tuya retry policy
 - Support for sending metrics to OpenTSDB
-- Support for proper status change logging
+- Work out a better logging format
 
 Improvements:
 - Notify multiple device status changes in one message when they happen at the same time
 - Encryption support
 - User identification
 - Proto authorization (http=gets only, native=everything, etc...)
-- User authorization
+- User permission settings and validation
 - Move "get_status_on_start" to device.py instead of being in tuya.py
 
 

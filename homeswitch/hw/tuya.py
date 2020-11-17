@@ -1,4 +1,3 @@
-import base64
 import binascii
 from hashlib import md5
 import json
@@ -264,7 +263,6 @@ class TuyaDevice(EventEmitter):
             command_hb = '0{}'.format(command_hb)
         if 't' not in payload:
             payload['t'] = str(int(time.time()))
-        print("CMD: ", command_hb)
 
         # Serialise the payload and clean it up
         json_payload = json.dumps(payload)

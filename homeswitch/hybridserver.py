@@ -89,8 +89,8 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
                 return
             # Create a request object
             self.request = HomeSwitchRequest() if ord(data[0]) == 3 else HTTPRequest()
-            self.request.on('ready', lambda: self.emit('request', self.request, False))
-            self.request.on('error', lambda: self.emit('request', self.request, True))
+            self.request.on('ready', lambda: self.emit('request', self.request, None))
+            self.request.on('error', lambda description: self.emit('request', self.request, description))
         else:
             data = self.recv(1024)
             if len(data) < 1:
@@ -112,6 +112,14 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
             self.status = "gone"
             self.server.remove_user(self)
             self.close()
+
+    def reply(self, body):
+        _body = body.copy()
+        if self.request:
+            if self.request.id:
+                _body['id'] = self.request.id
+
+        return self.message(_body if _body else body)
 
     def message(self, body):
         proto = "HTTP" if self.proto == "http" else "HS"
@@ -186,9 +194,10 @@ class HomeSwitchRequest(EventEmitter):
                     if len(self._raw_body) >= self.size:
                         self._eating_stage = "done"
                         self.body = json.loads(self._raw_body)
-                        self.method = self.body.get('method')
-                        if not self.method:
-                            self.emit('error')
+                        self.method = self.body.get('method', None)
+                        self.id = self.body.get('id', None)
+                        if not self.method or not self.id:
+                            self.emit('error', 'Mandatory request fields were not present')
                         else:
                             self.emit('ready')
                     return
@@ -208,6 +217,7 @@ class HomeSwitchRequest(EventEmitter):
 class HTTPRequest(EventEmitter):
     def __init__(self, method=None, url=None, http_version=None, headers={}, raw_request=None):
         super(HTTPRequest, self).__init__()
+        self.id = None
         self.proto = "http"
         self.raw_request = ''
         self.method = None

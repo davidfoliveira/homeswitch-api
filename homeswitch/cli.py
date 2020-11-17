@@ -18,9 +18,9 @@ def send_test_request(args):
 	if command == 'set':
 		device, status = args[2:4]
 		status = status == 'on'
-		s.send(proto.serialise({'method': 'set', 'devices': {device: status}, 'user': 'test'}))
+		s.send(proto.serialise({'id': 1, 'method': 'set', 'devices': {device: status}, 'user': 'test'}))
 	else:
-		s.send(proto.serialise({'method': 'get', 'user': 'test'}))
+		s.send(proto.serialise({'id': 2, 'method': 'get', 'user': 'test'}))
 
 	buf = bytearray(0)
 	while True:

@@ -43,12 +43,12 @@ class HomeSwitchAPI(object):
             debug("DBUG", "[Client {}] Proto {} Request: {}".format(client.id, req.proto, req.method), req.body)
 
         # If we had an error parsing the request, just get rid of it now!
-        if error:
-            return client.message({'error': 'request_error'})
+        if error is not None:
+            return client.reply({'error': 'request_error', 'description': error})
 
         # Check ID
         if self.require_id and not self._request_has_valid_auth(client, req):
-            return client.message({'error': 'auth', 'description': 'Valid identification is required'})
+            return client.reply({'error': 'auth', 'description': 'Valid identification is required'})
 
         # If it's an HTTP request, take care of it separately (because we care about URLs and stuff)
         if req.proto == "http":
@@ -70,8 +70,7 @@ class HomeSwitchAPI(object):
             err = {'error': 'internal', 'description': str(e)}
             if self.debug:
                 err['stacktrace'] = traceback.format_exc()
-            return client.message(err)
-
+            return client.reply(err)
 
     def on_http_request(self, client, req, error):
         debug("DBUG", "HTTP Request: {} {}:".format(req.method, req.url), req.post_data)
@@ -86,24 +85,24 @@ class HomeSwitchAPI(object):
                 if dev_id not in req.post_data:
                     self.devices[dev_id].update(discovery_status='offline')
 
-            return client.message({'ok': True})
+            return client.reply({'ok': True})
 
-        client.message({'error': 'not_found'})
+        client.reply({'error': 'not_found'})
 #            self.devices = req.post_data
 
     def get(self, client, req):
         # Validate
         if 'devices' in req.body and type(req.body.get('devices')) != list:
-            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value #1'})
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #1'})
 
         # If the user didn't ask for a specific device, that means all of them
         devices = self.devices.keys() if 'devices' not in req.body or len(req.body.get('devices')) == 0 else req.body.get('devices')
         if type(devices) is not list:
-            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})            
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})            
 
         devices = filter(lambda dev_id: dev_id in self.devices, devices)
         if len(devices) == 0:
-            return client.message({'error': 'not_found', 'description': 'No devices were found'})
+            return client.reply({'error': 'not_found', 'description': 'No devices were found'})
 
         debug("INFO", "Getting status for devices:", devices)
 
@@ -111,7 +110,7 @@ class HomeSwitchAPI(object):
         def reply(err, results):
             if err:
                 debug("ERRO", "Error getting device statuses: ", err)
-                return client.message(err)
+                return client.reply(err)
             if len(errors) > 0:
                 debug("WARN", "Found the following errors while getting the status of each device:", errors)
 
@@ -123,7 +122,7 @@ class HomeSwitchAPI(object):
                     'metadata': dev.metadata,
                     'status': status,
                 }
-            client.message(response)
+            client.reply(response)
 
         def _get_each_dev_status(dev_id, callback):
             def _on_dev_reply(err, status):
@@ -136,10 +135,10 @@ class HomeSwitchAPI(object):
     def set(self, client, req):
         # Validate and clean it up
         if 'devices' in req.body and type(req.body.get('devices')) != dict:
-            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value'})
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value'})
         devices = req.body.get('devices')
         if type(devices) is not dict:
-            return client.message({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})
         device_updates = []
         for dev_id in devices:
             if dev_id in self.devices and type(devices[dev_id]) is bool:
@@ -149,9 +148,14 @@ class HomeSwitchAPI(object):
         def finish(err, results):
             if err:
                 debug("ERRO", "Error getting device statuses: ", err)
-                return client.message(err)
+                return client.reply(err)
             if len(errors) > 0:
                 debug("WARN", "Found the following errors while getting the status of each device:", errors)
+
+            response = {'devices': {}}
+            for dev_id, status in results:
+                response['devices'][dev_id] = {'status': status}
+            client.reply(response)
 
         def _set_each_dev_status(id_status, callback):
             dev_id, status = id_status

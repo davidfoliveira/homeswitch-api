@@ -5,7 +5,7 @@ import time
 import uuid
 
 from .asyncorepp import set_timeout, cancel_timeout
-from .util import DO_NOTHING, debug, current_stack
+from .util import DO_NOTHING, debug, dump, current_stack
 
 
 class SyncProto(EventEmitter):
@@ -166,7 +166,7 @@ class SyncProtoCommand(object):
         self.timeout = None
         self._responded = ''
         if timeout:
-            self.timeout = set_timeout(lambda: cmd.reply({'error': 'command_timeout', 'descriptor': 'Waited too long for the device to respond'}, None), timeout)
+            self.timeout = set_timeout(lambda: self.reply({'error': 'command_timeout', 'descriptor': 'Waited too long for the device to respond'}, None), timeout)
 
     def __repr__(self):
         return json.dumps({
@@ -181,7 +181,7 @@ class SyncProtoCommand(object):
     def reply(self, *args):
         if self.responded:
             debug("WARN", "Command's {} was already called. Stopping another reply here".format(self.id))
-            debug("DBUG", "FIRST CALL:\n{}\n\nSECOND CALL:\n{}\n\n".format(self._responded, current_stack()))
+            dump("DBUG", "FIRST CALL:\n{}\nSECOND CALL:\n{}\n".format(self._responded, current_stack()))
             return
 
         self.responded = True

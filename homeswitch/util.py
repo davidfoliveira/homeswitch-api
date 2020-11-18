@@ -46,6 +46,10 @@ def debug(type, pattern, *args):
     print(pattern.format(*values))
 
 
+def dump(type, data):
+    print('{}: [{}] '.format(type, str(datetime.utcnow())+'Z')+data)
+
+
 def dict_diff(a, b):
     diffs = {}
     for key in a:

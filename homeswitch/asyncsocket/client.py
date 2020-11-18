@@ -152,6 +152,7 @@ class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
 
     # Handle the connect event
     def handle_close(self):
+        self.close()
         self.emit('close')
 
     # Handle an exception

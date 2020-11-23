@@ -83,19 +83,24 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         data = None
 
         # If we don't have a request object yet, create it... then just push data into it (it works like a stream)
-        if not self.request:
-            data = self.recv(1)
-            if len(data) < 1:
-                return
-            # Create a request object
-            self.request = HomeSwitchRequest() if ord(data[0]) == 3 else HTTPRequest()
-            self.request.on('ready', lambda: self.emit('request', self.request, None))
-            self.request.on('error', lambda description: self.emit('request', self.request, description))
-        else:
-            data = self.recv(1024)
-            if len(data) < 1:
-                return
-        self.request.push_data(data)
+        data = self.recv(1024)
+        if len(data) < 1:
+            return
+        used_data = 0
+
+        its = 0
+        while len(data) > 0:
+            its += 1
+            if its > 100:
+                debug("CRIT", "Something's wrong on parsing a message. Seems to be in an infinite loop")
+                break
+            if not self.request or self.request.is_ready:
+                # Create a request object
+                self.request = HomeSwitchRequest() if ord(data[0]) == 3 else HTTPRequest()
+                self.request.on('ready', lambda: self.emit('request', self.request, None))
+                self.request.on('error', lambda description: self.emit('request', self.request, description))
+            used_data = self.request.push_data(data)
+            data = data[used_data:]
 
     def handle_error(self):
         debug("INFO", "Client {} crashed".format(self.id))
@@ -172,12 +177,16 @@ class HomeSwitchRequest(EventEmitter):
         self.proto = 3
         self.encryption = None
         self.size = None
+        self.is_ready = False
         self.body = None
         self.method = None
         self._raw_body = ""
         self._eating_stage = "need_header"
 
     def push_data(self, data):
+        # We need to understand how much data we actually need because perhaps it belongs to another request
+        total_data_used = 0
+        initial_rr_size = len(self.raw_request)
         self.raw_request += data
         while self._eating_stage != "done" and len(self.raw_request) > 0:
             if self._eating_stage == "need_header":
@@ -185,27 +194,41 @@ class HomeSwitchRequest(EventEmitter):
                     self._eat_header(self.raw_request)
                     self._eating_stage = "need_body"
                     self.raw_request = self.raw_request[4:]
+                    total_data_used += 4
                 else:
-                    return
+                    return 4
             elif self._eating_stage == "need_body":
-                if len(self.raw_request) > 0:
-                    self._raw_body += self.raw_request
-                    self.raw_request = ""
-                    if len(self._raw_body) >= self.size:
-                        self._eating_stage = "done"
-                        self.body = json.loads(self._raw_body)
-                        self.method = self.body.get('method', None)
-                        self.id = self.body.get('id', None)
-                        if not self.method or not self.id:
-                            self.emit('error', 'Mandatory request fields were not present')
-                        else:
-                            self.emit('ready')
-                    return
+                # Eat everything that belongs to us
+                total_data_used += self._eat_body(self.raw_request)
+                self.raw_request = ""
+        return total_data_used
+
 
     def _eat_header(self, data):
         header = readUInt32BE(data, 0)
         self.encryption = header >> 16 & 0xff
-        self.req_size = header & 0xffff
+        self.size = header & 0xffff
+
+    def _eat_body(self, data):
+        missing = self.size - len(self._raw_body)
+        eating = missing if missing <= len(data) else len(data)
+        self._raw_body += data[0:eating]
+        if len(self._raw_body) >= self.size:
+            print("Request complete");
+            print("RB: ", self._raw_body)
+            self._eating_stage = "done"
+            self.is_ready = True
+            self.body = json.loads(self._raw_body)
+            self.method = self.body.get('method', None)
+            self.id = self.body.get('id', None)
+            if not self.method or not self.id:
+                self.emit('error', 'Mandatory request fields were not present')
+            else:
+                self.emit('ready')
+        return eating
+
+        if missing > len(self.raw_request):
+                        missing = len(self.raw_request)
 
     def __repr__(self):
         return "{}".format(self.method)
@@ -219,6 +242,7 @@ class HTTPRequest(EventEmitter):
         super(HTTPRequest, self).__init__()
         self.id = None
         self.proto = "http"
+        self.is_ready = False
         self.raw_request = ''
         self.method = None
         self.url = None
@@ -233,6 +257,7 @@ class HTTPRequest(EventEmitter):
         # FIXME: this is a massive temporary hack. It should support stream parsing
         if len(self.raw_request) > 10:
             self._eat_raw_request()
+        return len(data)
 
     def _eat_raw_request(self):
         print("ALL: ", self.raw_request)
@@ -275,6 +300,7 @@ class HTTPRequest(EventEmitter):
                 self.post_data = json.loads(self.post_data)
             except Exception:
                 return self.emit('error')
+        self.is_ready = True
         self.emit('ready')
 
     def __repr__(self):

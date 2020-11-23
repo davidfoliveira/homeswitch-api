@@ -11,14 +11,14 @@ from .util import debug
 
 
 class HomeSwitchAPI(object):
-    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, require_id=False):
+    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, requires_id=False):
         self.host = host
         self.port = port
         self.debug = debug
         self.server = HybridServer(host=host, port=port)
         self.running = True
         self.devices = devices
-        self.require_id = require_id
+        self.requires_id = requires_id
         self.server.on('request', self.on_request)
 
         # Initialise devices
@@ -47,7 +47,7 @@ class HomeSwitchAPI(object):
             return client.reply({'error': 'request_error', 'description': error})
 
         # Check ID
-        if self.require_id and not self._request_has_valid_auth(client, req):
+        if self.requires_id and not self._request_has_valid_auth(client, req):
             return client.reply({'error': 'auth', 'description': 'Valid identification is required'})
 
         # If it's an HTTP request, take care of it separately (because we care about URLs and stuff)
@@ -66,6 +66,8 @@ class HomeSwitchAPI(object):
                 return self.get(client, req)
             if req.method == 'set':
                 return self.set(client, req)
+            if req.method == 'ping':
+                return self.ping(client, req)
         except Exception as e:
             err = {'error': 'internal', 'description': str(e)}
             if self.debug:
@@ -90,6 +92,9 @@ class HomeSwitchAPI(object):
         client.reply({'error': 'not_found'})
 #            self.devices = req.post_data
 
+    def ping(self, client, req):
+        return client.reply({'ping': 'ping'})
+
     def get(self, client, req):
         # Validate
         if 'devices' in req.body and type(req.body.get('devices')) != list:
@@ -98,7 +103,7 @@ class HomeSwitchAPI(object):
         # If the user didn't ask for a specific device, that means all of them
         devices = self.devices.keys() if 'devices' not in req.body or len(req.body.get('devices')) == 0 else req.body.get('devices')
         if type(devices) is not list:
-            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})            
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})
 
         devices = filter(lambda dev_id: dev_id in self.devices, devices)
         if len(devices) == 0:
@@ -133,7 +138,7 @@ class HomeSwitchAPI(object):
         async.each(devices, _get_each_dev_status, reply)
 
     def set(self, client, req):
-        # Validate and clean it up
+        # Validate and clean up payload
         if 'devices' in req.body and type(req.body.get('devices')) != dict:
             return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value'})
         devices = req.body.get('devices')
@@ -141,8 +146,17 @@ class HomeSwitchAPI(object):
             return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})
         device_updates = []
         for dev_id in devices:
-            if dev_id in self.devices and type(devices[dev_id]) is bool:
-                device_updates.append((dev_id, devices[dev_id]))
+            dev_payload = devices[dev_id]
+            dev = self.devices.get(dev_id, None)
+            if type(dev_payload) is bool:
+                dev_payload = {'status': dev_payload}
+            if dev is None:
+                continue
+            if dev.activation_key != dev_payload.get('key'):
+                debug("WARN", "Excluding device {} from SET because of having wrong activation key".format(dev_id))
+                print("{} vs {}".format(dev.activation_key, dev_payload.get('key')))
+                continue
+            device_updates.append((dev_id, dev_payload.get('status')))
 
         errors = []
         def finish(err, results):

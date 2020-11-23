@@ -23,6 +23,9 @@ def each(items, eachFn, finalCallback=DO_NOTHING):
 	def _run(idx):
 		eachFn(items[idx], lambda *args: _on_each_done(idx, args))
 
+	if len(items) == 0:
+		return finalCallback(None, [])
+
 	for x in range(0, len(items)):
 		results.append(None)
 		_run(x)

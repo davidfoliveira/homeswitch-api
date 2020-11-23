@@ -1,25 +1,20 @@
  # TODO
 
 Needs:
-- Add support for command/response IDs as it's not really possible to guarantee sequential order on a stream of events
-  - On hybridserver proto
-
-- Check why sending 2 messages in a row in the cli makes the hybridserver confuse
-- Make {set} get a reply even in case the device doesn't change status
-
+- Support for hooks (Slack, OpenTSDB, ...)
+- Consider devices unhealthy/gone
+- Encryption support
+	- Configurable need for encryption
 
 Majors:
-- Timestamp sync at start (will help encryption and security later)
-- Encryption support
 - Define command retry policy - try with another connection? How many attempts?
   - Implement Tuya retry policy
-- Support for sending metrics to OpenTSDB
 - Work out a better logging format
 
 Improvements:
+- Get and log client_id (web, device, etc...)
+- Detect and log infinite loops on read and/or write and make them stop
 - Notify multiple device status changes in one message when they happen at the same time
-- Encryption support
-	- Configurable need for encryption
 - Authorization
 	- Proto authorization (http=gets only, native=everything, etc...)
 	- User permission settings and validation

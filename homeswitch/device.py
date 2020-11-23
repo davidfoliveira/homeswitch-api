@@ -25,6 +25,7 @@ class Device(EventEmitter):
         self.status_cache = config.get('status_cache', None)
         self.refresh_status = int(config.get('refresh_status', None))
         self.hold_get_status = config.get('hold_get_status', False)
+        self.activation_key = config.get('activation_key', None)
         self.config = config
         self.hw_metadata = hw_metadata
         self.hw = self._import_device_module(id, hw, config, hw_metadata) if hw else None

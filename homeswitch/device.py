@@ -17,25 +17,30 @@ class Device(EventEmitter):
         EventEmitter.__init__(self)
         self.id = id
         self.discovery_status = discovery_status
+        self.device_status = "up"
         self.switch_status = None
         self.last_status_update = 0
         self.hw_metadata = hw_metadata
         self.last_seen = last_seen
+        self.connect_errors = 0
+        self.hooks = config.get('hooks', {})
         self.metadata = config.get('metadata', {})
         self.status_cache = config.get('status_cache', None)
-        self.refresh_status = int(config.get('refresh_status', None))
+        self.refresh_status = int(config.get('refresh_status', 0))
         self.hold_get_status = config.get('hold_get_status', False)
         self.activation_key = config.get('activation_key', None)
+        self.fails_to_miss = config.get('fails_to_miss', 5)
         self.config = config
         self.hw_metadata = hw_metadata
         self.hw = self._import_device_module(id, hw, config, hw_metadata) if hw else None
         self.waiting_status = []
 
         # Listen to device's events
-        self.hw.on('status_update', self._on_status_update)
+        if self.hw:
+            self.hw.on('status_update', self._on_status_update)
 
         # Periodically refresh the device status
-        if self.refresh_status is not None:
+        if self.refresh_status:
             asyncorepp.set_interval(self._refresh_status, self.refresh_status)
 
     def _import_device_module(self, id, hw, config={}, hw_metadata={}):
@@ -50,7 +55,7 @@ class Device(EventEmitter):
         else:
             debug("INFO", "Got a status update about device {}. Device status has NOT changed ({})".format(self.id, status))
 
-    def update(self, **kwargs): #discovery_status=None, switch_status=None, hw_metadata=None):
+    def update(self, **kwargs):
         if 'discovery_status' in kwargs:
             self.discovery_status = kwargs.get('discovery_status', None)
             if self.discovery_status == 'online':
@@ -70,9 +75,12 @@ class Device(EventEmitter):
 
     def json(self):
         return {
+            'id': self.id,
             'discovery_status': self.discovery_status,
+            'device_status': self.device_status,
             'switch_status': self.switch_status,
             'last_seen': self.last_seen,
+            'metadata': self.metadata,
             'hw_metadata': self.hw_metadata,
         }
 
@@ -90,11 +98,12 @@ class Device(EventEmitter):
 
         with status_collector(self, callback) as collector_callback:
             if collector_callback:
-                return self.hw.get_status(lambda err, status: self._get_status_callback(err, status, collector_callback), origin)
+                return self.hw.get_status(lambda err, status: self._get_status_callback(err, status, origin, collector_callback), origin)
 
-    def _get_status_callback(self, err, status, callback):
+    def _get_status_callback(self, err, status, origin, callback):
         if err:
             debug("ERRO", "Error getting device {} status:".format(self.id), err)
+            self._check_error(err, origin)
             return callback(err, None)
 
         debug("INFO", "Device {} status is {}".format(self.id, status))
@@ -118,6 +127,7 @@ class Device(EventEmitter):
     def _set_status_callback(self, err, status, intent, callback):
         if err:
             debug("ERRO", "Error settings device {} status to {}:".format(self.id, intent), err)
+            self._check_error(err, 'set')
             return callback(err, None)
 
         debug("INFO", "Device {} was set to {} and is now {}".format(self.id, intent, status))
@@ -129,6 +139,21 @@ class Device(EventEmitter):
         if self.discovery_status == 'online':
             debug("INFO", "Updating device {} status...".format(self.id))
             self.get_status(DO_NOTHING, origin='refresh', ignore_cache=True)
+
+
+    def _check_success(self):
+        self.device_status = "up"
+
+    def _check_error(self, err, origin='UNKWNOWN'):
+        error_code = err.get('error', None)
+        is_connect_error = str(error_code).startswith('connect_')
+        if is_connect_error:
+            self.connect_errors += 1
+            if self.connect_errors >= self.fails_to_miss:
+                debug("WARN", "Too many connection errors for device {}. Marking it as down!".format(self.id))
+                self.device_status = "down"
+                self._on_status_update(None, origin='{}.too_many_errors'.format(origin))
+#                print("======== DEVICE {} IS DOWN".format(self.id))
 
 
 @contextmanager

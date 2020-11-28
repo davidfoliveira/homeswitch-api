@@ -3,6 +3,7 @@ import struct
 from datetime import datetime
 import traceback
 
+
 def bin2hex(data):
     return binascii.hexlify(data)
 
@@ -35,6 +36,10 @@ def UInt32BE(value):
     return struct.pack('>i', value)
 
 
+def ucfirst(value):
+    return value[0].upper()+value[1:]
+
+
 def debug(type, pattern, *args):
     pattern = '{}: [{}] ' + pattern
     for arg in args:
@@ -62,9 +67,21 @@ def dict_diff(a, b):
     return diffs
 
 
+def dict_to_obj(input):
+    return Bunch(input)
+
+
 def DO_NOTHING(*args):
     pass
 
 
 def current_stack():
     return ''.join(traceback.format_stack())
+
+
+class Bunch:
+    def __init__(self, data_dict):
+        for p, v in data_dict.items():
+            if type(v) is dict:
+                data_dict[p] = Bunch(v)
+        self.__dict__.update(data_dict)

@@ -78,6 +78,14 @@ class TuyaDevice(EventEmitter):
         # We will later connect to the new IP in case there's something in the queue or persistent_connections are on
         self._disconnect()
 
+        # TODO#1: Everything in the queue should be resent to the new IP
+        # - Probably not a big deal. syncproto should take care of it (syncproto.py:_on_disconnect()/line 35)
+        # - Think about possible set commands that were sent
+        # - Could have they somehow be still processing?
+        # - Should we wait for them to timeout before we connect to another host?
+        #   - What happens to commands coming in? Will they queue?
+        #   - Shall we hold on the disconnect() waiting for the queue to empty?
+
         # Be super sure we can connect
         if self.gw_id and self.ip:
             if self.persistent_connections:
@@ -172,8 +180,9 @@ class TuyaDevice(EventEmitter):
 
         # Otherwise, return an error to each command waiting in the queue
         # TODO: change me according to retry policy. Some parts of the code retry forever, others fail immediately
+        error_code = 'connect_timeout' if type(ex) is dict and ex.get('error') == 'timeout' else 'connect_error'
         self.sync_proto.flush(
-            {'error': 'connect_timeout', 'description': 'Failure connecting to device {}'.format(self.id)},
+            {'error': error_code, 'description': 'Failure connecting to device {}'.format(self.id)},
             None
         )
 
@@ -440,8 +449,8 @@ class TuyaDeviceListener(EventEmitter):
         # Parse messages and process them
         change_count = 0
         for m in self._parse_messages(data):
-#            m.payload['ip'] = m.payload['ip'].replace('.10.', '.11.') # TODO: remove me, just for making connects fail
-#            print("M: ", m)
+#            m.payload['ip'] = m.payload['ip'].replace('192.168.10.178', '127.0.0.1') # TODO: remove me, just for making connects fail
+            print("M: ", m)
             change_count += self._process_message(m.payload, address)
         return change_count
 

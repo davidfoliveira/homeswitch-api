@@ -1,10 +1,12 @@
  # TODO
 
 Needs:
-- Support for hooks (Slack, OpenTSDB, ...)
-- Consider devices unhealthy/gone
+- Instead of passing origin, pass a whole context object (with user as well)
+- Support for OpenTSDB
+- Timeout support (turn off device after X minutes)
 - Encryption support
 	- Configurable need for encryption
+- Add support for "pushing metrics" kind-of-devices (water tank)
 
 Majors:
 - Define command retry policy - try with another connection? How many attempts?
@@ -19,7 +21,9 @@ Improvements:
 	- Proto authorization (http=gets only, native=everything, etc...)
 	- User permission settings and validation
 - Move "get_status_on_start" to device.py instead of being in tuya.py
-
+- Check error on device start (seems to not count as connect error)
+    - Not too important. Maybe addressed when we move get_status_on_start to device.py
+- hw/tuya.pt TODO#1 - When we change device IP, device what to do to commands already sent to the previous IP - perhaps just resend them all
 
 Minors:
 - Evaluate whether we should destroy the hardware module or not when hardware metadata changes

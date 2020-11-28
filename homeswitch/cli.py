@@ -18,8 +18,14 @@ def send_test_request(args):
 	if command == 'set':
 		device, status = args[2:4]
 		status = status == 'on'
+		key = None
+		try:
+			device, key = device.split(':')
+		except Exception:
+			pass
+		print("K: ", key)
 		s.send(proto.serialise({'id': 2, 'method': 'get', 'user': 'test'}))
-		s.send(proto.serialise({'id': 1, 'method': 'set', 'devices': {device: status}, 'user': 'test'}))
+		s.send(proto.serialise({'id': 1, 'method': 'set', 'devices': {device: {'status': status, 'key': key}}, 'user': 'test'}))
 	else:
 		s.send(proto.serialise({'id': 2, 'method': 'get', 'user': 'test'}))
 

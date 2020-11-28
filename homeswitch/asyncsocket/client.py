@@ -34,6 +34,7 @@ class AsyncSocketClient(EventEmitter):
     def connect(self, ip, port, timeout=None):
         self.ip = ip
         self.port = port
+        self.connected = False
         self.connecting = True
         self.socket = AsyncSocketClientNative(ip, port)
         self.fd = self.socket.socket.fileno()
@@ -83,6 +84,7 @@ class AsyncSocketClient(EventEmitter):
 
     def _on_failure(self, ex):
         debug("ERRO", "Error connecting to {}:{}".format(self.ip, self.port), ex)
+        cancel_timeout(self.timeout)
         self.connecting = False
         self.connected = False
         if self.socket and self.socket.socket:
@@ -104,6 +106,8 @@ class AsyncSocketClient(EventEmitter):
 
     def _on_error(self, t, v, tb):
         debug("WARN", "Socket ({}:{}) error occurred:".format(self.ip, self.port), t, v, tb)
+        if self.connecting:
+            return self._on_failure(v)
         self.emit('error', t, v, tb)
 
     def _on_read(self):

@@ -1,0 +1,31 @@
+{
+    "modules": {
+        "slack": {
+            "url": "https://hooks.slack.com/services/..."
+        },
+        "opentsdb": {
+            "host": "127.0.0.1",
+            "port": 4242
+        }
+    },
+    "devices": {
+        "bf5d0abdb1e62": {
+            "slack": { }
+        },
+        "bf4a36374de48": {
+            "slack": {
+                "module": "farm.homeswitch.slack_hook",
+                "alerts_url": "https://hooks.slack.com/services/...",
+                "text_determiner": "A",
+                "text_device": "ficha",
+                "text_was_found": "foi encontrada",
+                "text_is": "está",
+                "text_was": "foi",
+                "text_on": "ligada",
+                "text_off": "desligada",
+                "text_out_of_service": "fora de serviço",
+                "text_by_system": "pelo sistema"
+            }
+        }
+    }
+}

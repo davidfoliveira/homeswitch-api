@@ -4,6 +4,7 @@ import time
 import traceback
 
 from hybridserver import HybridServer
+from hooks import HooksClient
 
 import async
 from .device import Device
@@ -11,13 +12,14 @@ from .util import debug
 
 
 class HomeSwitchAPI(object):
-    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, requires_id=False):
+    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, hooks_server={}, requires_id=False):
         self.host = host
         self.port = port
         self.debug = debug
         self.server = HybridServer(host=host, port=port)
         self.running = True
         self.devices = devices
+        self.hooks_client = HooksClient(hooks_server) if hooks_server else None
         self.requires_id = requires_id
         self.server.on('request', self.on_request)
 
@@ -30,11 +32,23 @@ class HomeSwitchAPI(object):
     def _create_device(self, dev_id, config):
         dev = Device(id=dev_id, hw=config.get('hw'), config=config)
         dev.on('status_update', lambda status, origin: self._broadcast_status_update(dev_id, status, origin))
+        dev.on('status_update', lambda status, origin: self._run_hooks(dev_id, status, origin))
         return dev
 
     def _broadcast_status_update(self, dev_id, status, origin):
         dev = self.devices[dev_id]
         self.server.broadcast({'devices': {dev_id: {'status': status, 'origin': origin}}})
+
+    def _run_hooks(self, dev_id, status, origin):
+        if self.hooks_client is None:
+            return
+        print("====== RUN HOOOOKS")
+        dev = self.devices[dev_id]
+        self.hooks_client.notify('status_update', {
+            'device': dev.json(),
+            'status': status,
+            'origin': origin
+        })
 
     def on_request(self, client, req, error):
         if req.proto == "http":
@@ -77,23 +91,25 @@ class HomeSwitchAPI(object):
     def on_http_request(self, client, req, error):
         debug("DBUG", "HTTP Request: {} {}:".format(req.method, req.url), req.post_data)
         if req.method == 'POST' and req.url == '/api/device/sync':
-            for dev_id, value in req.post_data.items():
-                # Ignore devices that we didn't configure
-                if dev_id in self.devices:
-                    self.devices[dev_id].update(discovery_status='online', hw_metadata=value)
-
-            for dev_id, value in self.devices.items():
-                # If the device is not mentioned, mark it offline
-                if dev_id not in req.post_data:
-                    self.devices[dev_id].update(discovery_status='offline')
-
-            return client.reply({'ok': True})
+            return self.sync(client, req)
 
         client.reply({'error': 'not_found'})
-#            self.devices = req.post_data
 
     def ping(self, client, req):
         return client.reply({'ping': 'ping'})
+
+    def sync(self, client, req):
+        for dev_id, value in req.post_data.items():
+            # Ignore devices that we didn't configure
+            if dev_id in self.devices:
+                self.devices[dev_id].update(discovery_status='online', hw_metadata=value)
+
+        for dev_id, value in self.devices.items():
+            # If the device is not mentioned, mark it offline
+            if dev_id not in req.post_data:
+                self.devices[dev_id].update(discovery_status='offline')
+
+        return client.reply({'ok': True})
 
     def get(self, client, req):
         # Validate
@@ -148,13 +164,16 @@ class HomeSwitchAPI(object):
         for dev_id in devices:
             dev_payload = devices[dev_id]
             dev = self.devices.get(dev_id, None)
-            if type(dev_payload) is bool:
+            # If it's the value directly, move it into an object (the proper format)
+            if type(dev_payload) is not dict:
                 dev_payload = {'status': dev_payload}
             if dev is None:
-                continue
+                return client.reply({'error': 'request_error', 'description': 'Device {} does not exist'.format(dev_id)})
+            status = dev_payload.get('status', None)
+            if type(status) is not bool and type(status) is not int and type(status) is not float:
+                return client.reply({'error': 'request_error', 'description': 'Invalid status for device {}'.format(dev_id)})
             if dev.activation_key != dev_payload.get('key'):
                 debug("WARN", "Excluding device {} from SET because of having wrong activation key".format(dev_id))
-                print("{} vs {}".format(dev.activation_key, dev_payload.get('key')))
                 continue
             device_updates.append((dev_id, dev_payload.get('status')))
 

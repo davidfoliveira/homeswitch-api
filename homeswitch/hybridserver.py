@@ -268,7 +268,7 @@ class HTTPRequest(EventEmitter):
         return len(data)
 
     def _eat_raw_request(self):
-        print("ALL: ", self.raw_request)
+        debug("DBUG", "HTTP Request:", self.raw_request)
         line_num = 0
         last_crlf = 0
         while True:

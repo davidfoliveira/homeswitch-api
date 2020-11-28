@@ -43,9 +43,6 @@ class SyncProto(EventEmitter):
                     return
                 if type(reply) is str and reply == '':
                     continue
-#                if type(reply) is not dict:
-#                    print("Message is weird")
-#                    raise Exception('Unexpected message type: {}'.format(type(reply)))
             except ValueError as e:
                 debug("ERRO", "Error reading and parsing message:", e)
                 if len(self.command_queue) > 0:

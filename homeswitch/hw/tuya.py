@@ -307,7 +307,6 @@ class TuyaDevice(EventEmitter):
 
     def _read_and_parse_message(self, proto):
         # Read the header and parse it
-#        print("READING header from {} ({})".format(self.socket.fileno(), self.id))
         header = proto.read(16)
         if header is None:
             return None
@@ -323,14 +322,12 @@ class TuyaDevice(EventEmitter):
             raise ValueError('Unknown prefix {}'.format(prefix))
 
         # Read payload
-#        print("READING payload from {} ({})".format(self.socket.fileno(), self.id))
         payload = proto.read(payloadSize - 8)
         if payload is None:
             proto.put_back(header)
             return None
 
         # Read suffix
-#        print("READING suffix from {} ({})".format(self.socket.fileno(), self.id))
         suffix = proto.read(8)
         if suffix is None:
             proto.put_back(payload)
@@ -451,7 +448,6 @@ class TuyaDeviceListener(EventEmitter):
         change_count = 0
         for m in self._parse_messages(data):
 #            m.payload['ip'] = m.payload['ip'].replace('192.168.10.178', '127.0.0.1') # TODO: remove me, just for making connects fail
-            print("M: ", m)
             change_count += self._process_message(m.payload, address)
         return change_count
 

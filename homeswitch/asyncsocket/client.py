@@ -118,6 +118,9 @@ class AsyncSocketClient(EventEmitter):
 #        debug("INFO", "Socket ({}:{}) write can happen".format(self.ip, self.port))
         self.emit('write')
 
+    def __destroy__(self):
+        self.disconnect()
+
 
 class AsyncSocketClientNative(asyncore.dispatcher, EventEmitter):
     def __init__(self, host, port):

@@ -13,7 +13,7 @@ class SlackHook(object):
     def __init__(self, config={}):
         self.config = config
 
-    def notify(self, type=None, settings={}, data={}):
+    def notify(self, notif_type=None, settings={}, data={}):
         config = self.config.copy()
         config.update(settings)
         notification = {}
@@ -25,7 +25,7 @@ class SlackHook(object):
 
         # Default behaviour
         else:
-            if type == 'status_update':
+            if notif_type == 'status_update':
                 dev = data.device
                 status = data.status
                 if dev is None:

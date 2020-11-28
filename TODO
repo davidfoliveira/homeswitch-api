@@ -1,12 +1,13 @@
  # TODO
 
 Needs:
-- Support for OpenTSDB
 - Timeout support (turn off device after X minutes)
 - Encryption support
 	- Configurable need for encryption
 - Add support for "pushing metrics" kind-of-devices (water tank)
 - Cleanup {'origin': 'UNKNOWN'} - This should be in a single place
+- Support for scheduling sets
+
 
 Majors:
 - Define command retry policy - try with another connection? How many attempts?

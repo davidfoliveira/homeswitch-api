@@ -95,7 +95,7 @@ class TuyaDevice(EventEmitter):
                 self._connect()
             if self.get_status_on_start:
                debug("INFO", "Getting device's status on start...")
-               self.get_status(origin='online')
+               self.get_status(ctx={'origin':'online'})
 
     def update(self, hw_metadata={}):
         ip = hw_metadata.get('ip', None)
@@ -217,7 +217,7 @@ class TuyaDevice(EventEmitter):
         debug("WARN", "Marking connection as unhealthy. Reconnecting and resending message!")
         self._reconnect()
 
-    def set_status(self, value, callback=DO_NOTHING):
+    def set_status(self, value, ctx={'origin': 'set'}, callback=DO_NOTHING):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
         debug("DBUG", "Setting Tuya device status to {} (IP: {}, PORT: {}, GW_ID: {})".format(value, self.ip, self.port, self.gw_id))
@@ -226,18 +226,19 @@ class TuyaDevice(EventEmitter):
             'devId': self.gw_id,
             'dps':   {str(self.dps): value},
             'uid':   self.gw_id,
-        }, lambda err, reply: self._set_status_callback(err, reply, callback))
+        }, lambda err, reply: self._set_status_callback(err, reply, ctx, callback))
 
-    def _set_status_callback(self, err, reply, callback):
+    def _set_status_callback(self, err, reply, ctx, callback):
         if err:
             debug("DBUG", "Error setting device {} status:".format(self.gw_id), err)
             return callback(err, None)
         debug("DBUG", "Got device {} status after SET:".format(self.gw_id), reply)
         status = reply.get('dps').get(self.dps)
-        self.emit('status_update', status, 'set')
+        ctx['origin'] = 'set'
+        self.emit('status_update', status, ctx=ctx)
         return callback(None, status)
 
-    def get_status(self, callback=DO_NOTHING, origin='UNKWNOWN'):
+    def get_status(self, callback=DO_NOTHING, ctx={'origin':'UNKWNOWN'}):
         if not self.ip:
             raise Exception("Device {} has NO IP address yet. Can't get its status")
         debug("DBUG", "Getting Tuya device status (IP: {}, PORT: {}, GW_ID: {})".format(self.ip, self.port, self.gw_id))
@@ -247,16 +248,16 @@ class TuyaDevice(EventEmitter):
             'devId': self.gw_id,
             'dps':   {str(self.dps): None},
             'uid':   self.gw_id,
-        }, lambda err, reply: self._get_status_callback(err, reply, callback, origin))
+        }, lambda err, reply: self._get_status_callback(err, reply, callback, ctx))
 
-    def _get_status_callback(self, err, reply, callback, origin):
+    def _get_status_callback(self, err, reply, callback, ctx):
         if err:
             debug("ERRO", "Error getting Tuya device {} status:".format(self.gw_id), err)
             return callback(err, None)
 
         debug("DBUG", "Got device {} status:".format(self.gw_id), reply)
         status = reply.get('dps').get(self.dps)
-        self.emit('status_update', status, origin)
+        self.emit('status_update', status, ctx=ctx)
         return callback(None, status)
 
     def _encode_and_send_message(self, message):

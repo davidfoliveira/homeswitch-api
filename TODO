@@ -1,12 +1,12 @@
  # TODO
 
 Needs:
-- Instead of passing origin, pass a whole context object (with user as well)
 - Support for OpenTSDB
 - Timeout support (turn off device after X minutes)
 - Encryption support
 	- Configurable need for encryption
 - Add support for "pushing metrics" kind-of-devices (water tank)
+- Cleanup {'origin': 'UNKNOWN'} - This should be in a single place
 
 Majors:
 - Define command retry policy - try with another connection? How many attempts?
@@ -14,6 +14,7 @@ Majors:
 - Work out a better logging format
 
 Improvements:
+- Add support for storing events in a queue when they arrive and processing them in case hshookd dies
 - Get and log client_id (web, device, etc...)
 - Detect and log infinite loops on read and/or write and make them stop
 - Notify multiple device status changes in one message when they happen at the same time

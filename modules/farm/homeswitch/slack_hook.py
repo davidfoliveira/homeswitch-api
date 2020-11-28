@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 
+
 DEFAULT_STATUS_TEMPLATE = '{device} was set to {status} by {who}'
 
 
 def format_notification(message, config={}):
     dev = message.device
     status = message.status
-    origin = message.origin or 'unknown'
+    origin = message.ctx.origin
     if dev is None:
         debug("WARN", "Was supposed to send a status update notification but got no device")
         return
 
     # Work our the origin
     template = config.get('text_determiner', 'The')
-    device_name = dev.metadata.name if getattr(dev, 'metadata') and getattr(dev.metadata, 'name') else '{text_device} {dev_id}'.format(
+    device_name = dev.name or '{text_device} {dev_id}'.format(
         text_device=config.get('text_device', 'device'),
         dev_id=dev.id
     )
@@ -44,7 +45,7 @@ def format_notification(message, config={}):
     if origin in ('online', 'refresh'):
         template += config.get('text_by_system', 'by the system')
     elif origin == 'set':
-        template += 'por _{}_ '.format('Meh')
+        template += 'por _{}_ '.format(ucfirst(message.ctx.user) or config.get('text_unknown', 'Unknown'))
 
     notification = {
         'text': template.format(
@@ -53,3 +54,7 @@ def format_notification(message, config={}):
         )
     }
     return notification
+
+
+def ucfirst(value):
+    return value[0].upper()+value[1:]

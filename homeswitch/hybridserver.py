@@ -182,6 +182,7 @@ class HomeSwitchRequest(EventEmitter):
         self.method = None
         self._raw_body = ""
         self._eating_stage = "need_header"
+        self._ctx = None
 
     def push_data(self, data):
         # We need to understand how much data we actually need because perhaps it belongs to another request
@@ -214,8 +215,6 @@ class HomeSwitchRequest(EventEmitter):
         eating = missing if missing <= len(data) else len(data)
         self._raw_body += data[0:eating]
         if len(self._raw_body) >= self.size:
-            print("Request complete");
-            print("RB: ", self._raw_body)
             self._eating_stage = "done"
             self.is_ready = True
             self.body = json.loads(self._raw_body)
@@ -236,6 +235,14 @@ class HomeSwitchRequest(EventEmitter):
     def get_user(self):
         return self.body.get('user', None)
 
+    def get_ctx(self):
+        if self._ctx is None:
+            self._ctx = {
+                'origin': 'request', # default origin
+                'user': self.get_user(),
+            }
+        return self._ctx
+
 
 class HTTPRequest(EventEmitter):
     def __init__(self, method=None, url=None, http_version=None, headers={}, raw_request=None):
@@ -249,6 +256,7 @@ class HTTPRequest(EventEmitter):
         self.http_version = None
         self.headers = headers
         self.post_data = None
+        self._ctx = None
 #        if raw_request:
 #            self._eat_raw_request()
 
@@ -313,3 +321,11 @@ class HTTPRequest(EventEmitter):
                 return re.sub(r':.*', '', auth)
             except Exception as e:
                 return None
+
+    def get_ctx(self):
+        if self._ctx is None:
+            self._ctx = {
+                'origin': 'request', # default origin
+                'user': self.get_user(),
+            }
+        return self._ctx

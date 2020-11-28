@@ -13,9 +13,14 @@ class HooksClient(object):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
         debug("DBUG", "Hooks Client will send data to {}:{}".format(self.host, self.port))
 
-    def notify(self, notif_type, data):
-        debug("INFO", "Sending a {} notification:".format(notif_type), data)
-        buf = json.dumps({'id': str(uuid.uuid4()), 'type': notif_type, 'data': data})
+    def notify(self, hook_name, notif_type, data):
+        debug("INFO", "Sending a {} / {} hook notification:".format(hook_name, notif_type), data)
+        buf = json.dumps({
+            'id': str(uuid.uuid4()),
+            'hook': hook_name,
+            'type': notif_type,
+            'data': data
+        })
         return self.socket.sendto(
             buf.encode('utf-8'),
             (self.host, self.port)
@@ -85,10 +90,16 @@ class HooksServer(object):
 
     def _process_message(self, message):
         # Get notification type
-        msg = dict_to_obj(message)
+        msg = HookMessage(message)
+        if msg.hook is None:
+            debug("WARN", "Got a message without a hook name. Skipping:", message)
+            return None
+        if msg.hook not in self.modules:
+            debug("WARN", "Hook '{}' is not supported. Skipping:".format(msg.hook), message)
+            return None
+        module = self.modules[msg.hook]
 
-        notif_type = msg.type
-        if notif_type is None:
+        if msg.type is None:
             debug("WARN", "Got a message without type. Skipping:", message)
             return None
 
@@ -103,20 +114,53 @@ class HooksServer(object):
         if dev_conf is None:
             debug("WARN", "Got NO configuration for device {}. Skipping this message".format(dev_id))
             return False
+        if msg.hook not in dev_conf:
+            debug("WARN", "Got NO device {} configuration for hook '{}'. Skipping this message".format(dev_id, msg.hook))
+            return False
 
         # Call each of the hook module notify() functions
-        for mod_name, settings in dev_conf.items():
-            module = self.modules[mod_name]
-#            try:
-            module.notify(notif_type, settings, msg.data)
-            # except Exception as e:
-            #     debug("ERRO", "Error '{}' processing notification for exception:".format(e), message)
+        # try:
+        module.notify(msg.type, dev_conf[msg.hook], msg.data)
+        # except Exception as e:
+        #     debug("ERRO", "Error '{}' processing notification for exception:".format(e), message)
 
     def _store_message(self, msg):
         pass
 
     def _mark_message(self, msg, status):
         pass
+
+
+class HookMessage(object):
+    def __init__(self, message):
+        self.id = message.get('id', None)
+        self.hook = message.get('hook', None)
+        self.type = message.get('type', None)
+        self.data = HookMessageData(message.get('data'))
+
+
+class HookMessageData(object):
+    def __init__(self, data):
+        self.device = HookMessageDevice(data.get('device', {}))
+        self.status = data.get('status', None)
+        self.ctx = HookMessageContext(data.get('ctx', {}))
+
+
+class HookMessageDevice(object):
+    def __init__(self, device):
+        self.id = device.get('id', None)
+        self.last_seen = device.get('last_seen', None)
+        self.switch_status = device.get('switch_status', None)
+        self.discovery_status = device.get('discovery_status', None)
+        self.device_status = device.get('device_status', None)
+        self.metadata = device.get('metadata', {})
+        self.name = self.metadata.get('name', None)
+
+
+class HookMessageContext(object):
+    def __init__(self, ctx):
+        self.origin = ctx.get('origin', None)
+        self.user = ctx.get('user', None)
 
 
 def main():

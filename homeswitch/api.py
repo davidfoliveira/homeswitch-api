@@ -31,24 +31,25 @@ class HomeSwitchAPI(object):
 
     def _create_device(self, dev_id, config):
         dev = Device(id=dev_id, hw=config.get('hw'), config=config)
-        dev.on('status_update', lambda status, origin: self._broadcast_status_update(dev_id, status, origin))
-        dev.on('status_update', lambda status, origin: self._run_hooks(dev_id, status, origin))
+        dev.on('status_update', lambda status, ctx: self._broadcast_status_update(dev_id, status, ctx))
+        dev.on('status_update', lambda status, ctx: self._run_hooks(dev_id, status, ctx))
         return dev
 
-    def _broadcast_status_update(self, dev_id, status, origin):
+    def _broadcast_status_update(self, dev_id, status, ctx):
         dev = self.devices[dev_id]
-        self.server.broadcast({'devices': {dev_id: {'status': status, 'origin': origin}}})
+        self.server.broadcast({'devices': {dev_id: {'status': status, 'ctx': ctx}}})
 
-    def _run_hooks(self, dev_id, status, origin):
+    def _run_hooks(self, dev_id, status, ctx):
         if self.hooks_client is None:
             return
-        print("====== RUN HOOOOKS")
         dev = self.devices[dev_id]
-        self.hooks_client.notify('status_update', {
-            'device': dev.json(),
-            'status': status,
-            'origin': origin
-        })
+        debug("INFO", "Running hooks for device {}:".format(dev_id), dev.hooks)
+        for hook_name in dev.hooks:
+            self.hooks_client.notify(hook_name, 'status_update', {
+                'device': dev.json(),
+                'status': status,
+                'ctx': ctx,
+            })
 
     def on_request(self, client, req, error):
         if req.proto == "http":
@@ -146,11 +147,11 @@ class HomeSwitchAPI(object):
             client.reply(response)
 
         def _get_each_dev_status(dev_id, callback):
-            def _on_dev_reply(err, status):
+            def _on_dev_reply(err, status, ctx):
                 if err:
                     errors.append(err)
                 callback(None, dev_id, None if err else status)
-            self.devices[dev_id].get_status(_on_dev_reply, origin='request')
+            self.devices[dev_id].get_status(_on_dev_reply, ctx=req.get_ctx())
         async.each(devices, _get_each_dev_status, reply)
 
     def set(self, client, req):
@@ -192,11 +193,11 @@ class HomeSwitchAPI(object):
 
         def _set_each_dev_status(id_status, callback):
             dev_id, status = id_status
-            def _on_dev_reply(err, status, intent):
+            def _on_dev_reply(err, status, intent, ctx):
                 if err:
                     errors.append(err)
                 callback(None, dev_id, None if err else status)
-            self.devices[dev_id].set_status(status, _on_dev_reply)
+            self.devices[dev_id].set_status(status, ctx=req.get_ctx(), callback=_on_dev_reply)
 
         # Set the status of all devices
         async.each(device_updates, _set_each_dev_status, finish)

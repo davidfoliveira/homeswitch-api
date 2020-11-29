@@ -23,7 +23,7 @@ def format_notification(message, config={}):
         if 'alerts_url' in config:
             config['url'] = config['alerts_url']
         template += config.get('text_was_found', 'was found')
-    elif origin == 'refresh':
+    elif origin == 'refresh' or origin.startswith('refresh.'):
         template += config.get('text_was_found', 'was found')
     else:
         if status == None:
@@ -42,7 +42,7 @@ def format_notification(message, config={}):
     template += ' '
 
     # User
-    if origin in ('online', 'refresh'):
+    if origin in ('online', 'refresh') or origin.startswith('refresh.'):
         template += config.get('text_by_system', 'by the system')
     elif origin == 'set':
         template += 'por _{}_ '.format(ucfirst(message.ctx.user) or config.get('text_unknown', 'Unknown'))

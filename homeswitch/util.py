@@ -41,7 +41,7 @@ def ucfirst(value):
 
 
 def debug(type, pattern, *args):
-    pattern = '{}: [{}] ' + pattern
+    pattern = '{}: [{}] ' + pattern.replace('{', '{{').replace('}', '}}')
     for arg in args:
         pattern += ' {}'
 

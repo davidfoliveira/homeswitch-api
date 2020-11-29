@@ -1,6 +1,7 @@
 import json
 import socket
 import time
+import requests
 
 from ..util import debug
 
@@ -23,6 +24,7 @@ class OpenTSDBHook(object):
         # Get host/port
         host = config.get('host', '127.0.0.1')
         port = int(config.get('port', '4242'))
+        url = "http://{}:{}/api/put".format(host, port)
 
         # Generate the final metric and value
         value = data.status
@@ -37,24 +39,25 @@ class OpenTSDBHook(object):
             ctx=data.ctx,
         )
 
-        debug("INFO", "Sending metric '{}' = {} to OpenTSDB at {}:{}...".format(metric, value, host, port))
-
-        # Connect and put the metric
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            s.connect((host, port))
-            s.sendall('put {metric} {ts} {value} origin={origin} user={user}\r\n'.format(
-                metric=metric,
-                ts=int(time.time()*1000),
-                value=value,
-                origin=data.ctx.origin or 'system',
-                user=data.ctx.user or 'unknown',
-            ))
-            s.close()
-        except Exception as e:
-            debug("ERRO", "Error sending metric to OpenTSDB:", e)
-            return
+        # Send the metric
+        debug("INFO", "Sending metric '{}' = {} to OpenTSDB at {}...".format(metric, value, url))
+        self._https_request(url, {}, json.dumps({
+            "metric": metric,
+            "timestamp": int(time.time()*1000),
+            "value": value,
+            "tags": {
+                "origin": data.ctx.origin or 'system',
+                "user": data.ctx.user or 'unknown',
+            }
+        }))
         debug("INFO", "Metric '{}' successfully sent to OpenTSDB".format(metric, value, host, port))
+
+    def _https_request(self, url, headers, data):
+        debug("INFO", "Calling OpenTSDB API...")
+        response = requests.post(url, headers=headers, data=data)
+        if response.status_code >= 300:
+            raise Exception('Error calling OpenTSDB API. Got status {}'.format(response.status_code))
+        debug("INFO", "Successfully called OpenTSDB API!")
 
 
 Hook = OpenTSDBHook

@@ -1,12 +1,7 @@
  # TODO
 
 Needs:
-- Add support for refresh.too_many_errors in hooks
-- Add support for retrying on the hooks server
-- Add support for storing events in a queue when they arrive and processing them in case hshookd dies
-- Add quicker timeout on sending metric to OpenTSDB
-- Fix crash on trying to call slack API
-
+- Think on how to update hooks and scheduling configurations via API
 - Timeout support (turn off device after X minutes)
 - Support for scheduling sets
 - Encryption support
@@ -21,6 +16,8 @@ Majors:
 - Work out a better logging format
 
 Improvements:
+- Add multithreading support to hooks server
+- Add quicker timeout on sending metric to OpenTSDB
 - Get and log client_id (web, device, etc...)
 - Detect and log infinite loops on read and/or write and make them stop
 - Notify multiple device status changes in one message when they happen at the same time

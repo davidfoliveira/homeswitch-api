@@ -4,3 +4,4 @@ conf/hsapid.json
 conf/hshookd.json
 *.pyc
 packages/*
+data/*

@@ -28,6 +28,8 @@ class OpenTSDBHook(object):
         value = data.status
         if type(value) is bool:
             value = 1 if value else 0
+        elif value is None:
+            value = -1
         metric = metric.format(
             type=notif_type,
             device=data.device,
@@ -51,6 +53,7 @@ class OpenTSDBHook(object):
             s.close()
         except Exception as e:
             debug("ERRO", "Error sending metric to OpenTSDB:", e)
+            return
         debug("INFO", "Metric '{}' successfully sent to OpenTSDB".format(metric, value, host, port))
 
 

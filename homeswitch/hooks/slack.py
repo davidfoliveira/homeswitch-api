@@ -43,7 +43,8 @@ class SlackHook(object):
         # If there's no text, there's no message
         url = config.get('url', None)
         if url and notification and notification['text']:
-            debug("INFO", "Sending slack notification with '{}'".format(notification['text']))
+            text = notification['text'].encode('utf-8')
+            debug("INFO", "Sending slack notification with '{}'".format(text))
             headers = {'content-type': 'application/json'}
             return self._https_request(url, headers, json.dumps(notification))
 

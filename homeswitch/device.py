@@ -143,6 +143,7 @@ class Device(EventEmitter):
 
     def _check_success(self):
         self.device_status = "up"
+        self.connect_errors = 0
 
     def _check_error(self, err, ctx={'origin': 'UNKWNOWN'}):
         error_code = err.get('error', None)
@@ -150,7 +151,7 @@ class Device(EventEmitter):
         if is_connect_error:
             self.connect_errors += 1
             if self.connect_errors >= self.fails_to_miss:
-                debug("WARN", "Too many connection errors for device {}. Marking it as down!".format(self.id))
+                debug("WARN", "Too many connection errors ({}/{}) for device {}. Marking it as down!".format(self.connect_errors, self.fails_to_miss, self.id))
                 self.device_status = "down"
 
                 ctx['origin'] += '.too_many_errors'

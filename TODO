@@ -1,6 +1,7 @@
  # TODO
 
 Needs:
+- Check if too_many_errors is being triggered even right after it working
 - Think on how to update hooks and scheduling configurations via API
 - Timeout support (turn off device after X minutes)
 - Support for scheduling sets

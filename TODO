@@ -1,10 +1,9 @@
  # TODO
 
 Needs:
-- Check if too_many_errors is being triggered even right after it working
-- Think on how to update hooks and scheduling configurations via API
 - Timeout support (turn off device after X minutes)
 - Support for scheduling sets
+- Think how to update configurations via API
 - Encryption support
 	- Configurable need for encryption
 - Add support for "pushing metrics" kind-of-devices (water tank)
@@ -17,6 +16,7 @@ Majors:
 - Work out a better logging format
 
 Improvements:
+- Think on how to update hooks and scheduling via API
 - Add multithreading support to hooks server
 - Add quicker timeout on sending metric to OpenTSDB
 - Get and log client_id (web, device, etc...)

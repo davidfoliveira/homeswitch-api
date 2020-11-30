@@ -176,7 +176,7 @@ def status_collector(scope, callback, get=True):
         while len(other_callbacks) > 0:
             other_callback = other_callbacks.pop(0)
             if other_callback:
-                other_callback(err, status)
+                other_callback(*args)
         scope.waiting_status = []
 
     # Add callback to the list of callbacks waiting for status

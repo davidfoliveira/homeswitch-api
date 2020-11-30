@@ -217,7 +217,6 @@ class HooksServer(object):
             try:
                 self._process_message(msg)
             except Exception as e:
-                raise
                 debug("ERRO", "Error '{}' processing notification for message:".format(e), msg_dict)
                 msg.attempts += 1
                 if msg.attempts >= self.max_attempts:

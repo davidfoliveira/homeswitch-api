@@ -54,7 +54,7 @@ class OpenTSDBHook(object):
 
     def _https_request(self, url, headers, data):
         debug("INFO", "Calling OpenTSDB API...")
-        response = requests.post(url, headers=headers, data=data)
+        response = requests.post(url, headers=headers, data=data, timeout=self.config.get('timeout', 2))
         if response.status_code >= 300:
             raise Exception('Error calling OpenTSDB API. Got status {}'.format(response.status_code))
         debug("INFO", "Successfully called OpenTSDB API!")

@@ -81,6 +81,8 @@ class HomeSwitchAPI(object):
                 return self.get(client, req)
             if req.method == 'set':
                 return self.set(client, req)
+            if req.method == 'put':
+                return self.put(client, req)
             if req.method == 'ping':
                 return self.ping(client, req)
         except Exception as e:
@@ -93,6 +95,8 @@ class HomeSwitchAPI(object):
         debug("DBUG", "HTTP Request: {} {}:".format(req.method, req.url), req.post_data)
         if req.method == 'POST' and req.url == '/api/device/sync':
             return self.sync(client, req)
+        if req.method == 'PUT' and req.url == '/api/device/':
+            return self.put(client, req)
 
         client.reply({'error': 'not_found'})
 
@@ -107,7 +111,7 @@ class HomeSwitchAPI(object):
 
         for dev_id, value in self.devices.items():
             # If the device is not mentioned, mark it offline
-            if dev_id not in req.post_data:
+            if dev_id not in req.post_data and self.devices[dev_id].hw_type != "push":
                 self.devices[dev_id].update(discovery_status='offline')
 
         return client.reply({'ok': True})
@@ -179,12 +183,12 @@ class HomeSwitchAPI(object):
             device_updates.append((dev_id, dev_payload.get('status')))
 
         errors = []
-        def finish(err, results):
+        def _finish(err, results):
             if err:
-                debug("ERRO", "Error getting device statuses: ", err)
+                debug("ERRO", "Error setting device statuses: ", err)
                 return client.reply(err)
             if len(errors) > 0:
-                debug("WARN", "Found the following errors while getting the status of each device:", errors)
+                debug("WARN", "Found the following errors while settings the status of each device:", errors)
 
             response = {'devices': {}}
             for dev_id, status in results:
@@ -200,7 +204,50 @@ class HomeSwitchAPI(object):
             self.devices[dev_id].set_status(status, ctx=req.get_ctx(), callback=_on_dev_reply)
 
         # Set the status of all devices
-        async.each(device_updates, _set_each_dev_status, finish)
+        async.each(device_updates, _set_each_dev_status, _finish)
+
+    def put(self, client, req):
+        if 'devices' in req.body and type(req.body.get('devices')) != dict:
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value'})
+        devices = req.body.get('devices')
+        if type(devices) is not dict:
+            return client.reply({'error': 'request_error', 'description': 'Invalid devices `devices` value #2'})
+        device_puts = []
+        response = {'devices': {}}
+        for dev_id in devices:
+            dev_payload = devices[dev_id]
+            dev = self.devices.get(dev_id, None)
+            if dev is None:
+                continue
+            # If the value is a boolean or number, convert it into an object with {status: value}
+            if isinstance(dev_payload, (bool, int, float)):
+                dev_payload = {'status': dev_payload}
+            if type(dev_payload) is not dict:
+                continue
+            device_puts.append((dev_id, dev_payload.get('status')))
+
+        errors = []
+        def _finish(err, results):
+            if err:
+                debug("ERRO", "Error putting device statuses: ", err)
+                return client.reply(err)
+            if len(errors) > 0:
+                debug("WARN", "Found the following errors while putting the status of each device:", errors)
+
+            response = {'devices': {}}
+            for dev_id, status in results:
+                response['devices'][dev_id] = {'status': status}
+            client.reply(response)
+
+        def _put_each_dev_status(id_status, callback):
+            dev_id, status = id_status
+            def _on_dev_reply(err, status, intent, ctx):
+                if err:
+                    errors.append(err)
+                callback(None, dev_id, None if err else status)
+            self.devices[dev_id].put_status(status, ctx=req.get_ctx(), callback=_on_dev_reply)
+
+        async.each(device_puts, _put_each_dev_status, _finish)
 
     def run(self):
         debug("INFO", "Starting API...")

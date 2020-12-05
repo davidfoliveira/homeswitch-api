@@ -150,6 +150,9 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         self.fault_tolerant_send(proto.serialise(body))
 
     def send_http(self, status, body):
+        debug("INFO", "Responding to HTTP {} {} with {} ({} bytes)".format(
+            self.request.method, self.request.url, status, len(body)
+        ))
         raw_body = json.dumps(body)
         response  = "HTTP/1.0 {} {}\r\n".format(status, HTTP_STATUS_DESCRIPTION[str(status)])
         response += "Content-type: application/json\r\n"
@@ -174,6 +177,7 @@ class HomeSwitchRequest(EventEmitter):
     def __init__(self, raw_request=None):
         super(HomeSwitchRequest, self).__init__()
         self.raw_request = ""
+        self.headers = None
         self.proto = 3
         self.encryption = None
         self.size = None
@@ -245,7 +249,7 @@ class HomeSwitchRequest(EventEmitter):
 
 
 class HTTPRequest(EventEmitter):
-    def __init__(self, method=None, url=None, http_version=None, headers={}, raw_request=None):
+    def __init__(self, method=None, url=None, http_version=None, headers=None, raw_request=None):
         super(HTTPRequest, self).__init__()
         self.id = None
         self.proto = "http"
@@ -254,9 +258,11 @@ class HTTPRequest(EventEmitter):
         self.method = None
         self.url = None
         self.http_version = None
-        self.headers = headers
-        self.post_data = None
+        self.headers = headers if headers is not None else {}
+        self.post_data = ''
+        self.body = None
         self._ctx = None
+        self._eating_stage = "need_request_line"
 #        if raw_request:
 #            self._eat_raw_request()
 
@@ -269,47 +275,57 @@ class HTTPRequest(EventEmitter):
 
     def _eat_raw_request(self):
         debug("DBUG", "HTTP Request:", self.raw_request)
+        debug("DBUG", "Starting headers: ", self.headers)
         line_num = 0
         last_crlf = 0
-        while True:
-            try:
-                eol = self.raw_request.index("\r\n", last_crlf)
-            except ValueError:
-                return
-            line = self.raw_request[last_crlf:eol]
-#            debug("DBUG", "Line:", line)
-            last_crlf = eol + 2
+        if self._eating_stage in ("need_request_line", "need_headers"):
+            while len(self.raw_request) > 0:
+                try:
+                    eol = self.raw_request.index("\r\n", last_crlf)
+                except ValueError:
+                    return
+                line = self.raw_request[last_crlf:eol]
+    #            debug("DBUG", "Line:", line)
+                last_crlf = eol + 2
 
-            # Request line
-            if line_num == 0:
-                m = re.search('^(GET|POST|HEAD|PUT|PATCH|DELETE) (\/[^ ]*) (HTTP\/[0-9](?:\.[0-9]+)?)$', line)
-                if not m:
-                    raise ValueError('Invalid HTTP request. Could not parse request line: {}'.format(line))
-                self.method = m.group(1)
-                self.url = m.group(2)
-                self.http_version = m.group(3)
-            elif line == "":
-                # End of request headers
-                return self._eat_request_body(last_crlf)
-            else:
-                m = re.search('^([\w-]+)\s*:\s*(.*?)\s*$', line)
-                if m:
-                    self.headers[m.group(1).lower()] = m.group(2)
+                # Request line
+                if line_num == 0:
+                    m = re.search('^(GET|POST|HEAD|PUT|PATCH|DELETE) (\/[^ ]*) (HTTP\/[0-9](?:\.[0-9]+)?)$', line)
+                    if not m:
+                        raise ValueError('Invalid HTTP request. Could not parse request line: {}'.format(line))
+                    self.method = m.group(1)
+                    self.url = m.group(2)
+                    self.http_version = m.group(3)
+                elif line == "":
+                    # End of request headers
+                    self._eating_stage = "need_body"
+                    self.raw_request = self.raw_request[last_crlf:]
+                    return self._eat_request_body()
+                else:
+                    m = re.search('^([\w-]+)\s*:\s*(.*?)\s*$', line)
+                    if m:
+                        self.headers[m.group(1).lower()] = m.group(2)
+                line_num += 1
+        elif self._eating_stage == "need_body":
+            self._eat_request_body()
 
-            line_num += 1
+    def _eat_request_body(self):
+        content_length = self.headers.get('content-length', None)
+        if content_length is None:
+            self.is_ready = True
+            return self.emit('ready')
 
-    def _eat_request_body(self, pos):
-        if len(self.raw_request) > pos:
-            self.post_data = self.raw_request[pos:]
-#            debug("DBUG", "POST: ", self.post_data)
+        self.post_data += self.raw_request
+        if len(self.post_data) == int(content_length):
+            debug("DBUG", "POST: ", self.post_data)
             if self.headers.get('content-type') != 'application/json':
-                return self.emit('error')
+                return self.emit('error', "Unsupported content-type")
             try:
-                self.post_data = json.loads(self.post_data)
-            except Exception:
-                return self.emit('error')
-        self.is_ready = True
-        self.emit('ready')
+                self.body = self.post_data = json.loads(self.post_data)
+            except Exception as e:
+                return self.emit('error', 'Invalid request body')
+            self.is_ready = True
+            return self.emit('ready')
 
     def __repr__(self):
         return "{} {}".format(self.method, self.url)

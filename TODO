@@ -1,13 +1,16 @@
  # TODO
 
 Needs:
-- Timeout support (turn off device after X minutes)
-- Support for scheduling sets
+- Support for expirable queues (items with expire time) - this will help the syncproto and future session support
+- Implement session support for hooks API
+- Implement hsclockd with session support
+  - Timeout support (turn off device after X minutes)
+  - Scheduling sets
 - Think how to update configurations via API
 - Encryption support
 	- Configurable need for encryption
-- Add support for "pushing metrics" kind-of-devices (water tank)
 - Cleanup {'origin': 'UNKNOWN'} - This should be in a single place
+- Understand how a new status can be found by `request` (cache expires?)
 
 
 Majors:
@@ -16,19 +19,20 @@ Majors:
 - Work out a better logging format
 
 Improvements:
-- Think on how to update hooks and scheduling via API
-- Add multithreading support to hooks server
-- Add quicker timeout on sending metric to OpenTSDB
-- Get and log client_id (web, device, etc...)
+- Implement session support for users (queuing updates for a little while)
+- Think on how to update hooks and scheduling configuration via API
 - Detect and log infinite loops on read and/or write and make them stop
+- Get and log client_id (web, device, etc...)
 - Notify multiple device status changes in one message when they happen at the same time
 - Authorization
-	- Proto authorization (http=gets only, native=everything, etc...)
 	- User permission settings and validation
 - Move "get_status_on_start" to device.py instead of being in tuya.py
 - Check error on device start (seems to not count as connect error)
     - Not too important. Maybe addressed when we move get_status_on_start to device.py
-- hw/tuya.pt TODO#1 - When we change device IP, device what to do to commands already sent to the previous IP - perhaps just resend them all
+- hw/tuya.pt TODO#1 - When we change device IP, decide what to do with the commands already sent to the previous IP - perhaps just resend them all?
+- Authorization:
+	- Proto authorization (http=gets only, native=everything, etc...)
+- Add multithreading support to hooks server
 
 Minors:
 - Evaluate whether we should destroy the hardware module or not when hardware metadata changes

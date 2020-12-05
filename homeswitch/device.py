@@ -31,6 +31,7 @@ class Device(EventEmitter):
         self.fails_to_miss = config.get('fails_to_miss', 5)
         self.config = config
         self.hw_metadata = hw_metadata
+        self.hw_type = hw
         self.hw = self._import_device_module(id, hw, config, hw_metadata) if hw else None
         self.connect_errors = 0
         self.waiting_status = []
@@ -107,6 +108,7 @@ class Device(EventEmitter):
             return callback(err, None, ctx)
 
         debug("INFO", "Device {} status is {}".format(self.id, status))
+        self._check_success()
         self.switch_status = status
         self.last_status_update = time.time()
         return callback(None, status, ctx)
@@ -115,7 +117,7 @@ class Device(EventEmitter):
         debug("INFO", "Setting device {} status to {}".format(self.id, value))
         if not self.hw:
             debug("DBUG", "Device {} has no assigned hardware. Cannot set its status".format(self.id))
-            return callback({'error': 'Device {} has no assigned hardware. Cannott set its status'.format(self.id)}, None, value, ctx)
+            return callback({'error': 'Device {} has no assigned hardware. Cannot set its status'.format(self.id)}, None, value, ctx)
         if not self.discovery_status == 'online':
             debug("DBUG", "Device {} is not online. Cannot set its status".format(self.id))
             return callback({'error': 'Device {} is not online. Cannot set its status'.format(self.id)}, None, value, ctx)
@@ -126,20 +128,39 @@ class Device(EventEmitter):
 
     def _set_status_callback(self, err, status, intent, ctx, callback):
         if err:
-            debug("ERRO", "Error settings device {} status to {}:".format(self.id, intent), err)
+            debug("ERRO", "Error setting device {} status to {}:".format(self.id, intent), err)
             self._check_error(err, ctx)
             return callback(err, None, intent, ctx)
 
         debug("INFO", "Device {} was set to {} and is now {}".format(self.id, intent, status))
+        self._check_success()
         self.switch_status = status
         self.last_status_update = time.time()
+        return callback(None, status, intent, ctx)
+
+    def put_status(self, value, ctx={'origin': 'put'}, callback=DO_NOTHING):
+        debug("INFO", "Putting device {} status '{}'".format(self.id, value))
+        if not self.hw:
+            debug("DBUG", "Device {} has no assigned hardware. Cannot put a status in it".format(self.id))
+            return callback({'error': 'Device {} has no assigned hardware. Cannot put a status in it'.format(self.id)}, None, value, ctx)
+
+        return self.hw.put_status(value, ctx=ctx, callback=lambda err, status: self._put_status_callback(err, status, value, ctx, callback))
+
+    def _put_status_callback(self, err, status, intent, ctx, callback):
+        if err:
+            debug("ERRO", "Error putting device {} status '{}'".format(self.id, intent), err)
+            return callback(err, None, intent, ctx)
+
+        debug("INFO", "Device {} status was defined to '{}' and is now '{}'".format(self.id, intent, status))
+        self._check_success()
+        self.last_status_update = time.time()
+        self.discovery_status = "online"
         return callback(None, status, intent, ctx)
 
     def _refresh_status(self):
         if self.discovery_status == 'online':
             debug("INFO", "Updating device {} status...".format(self.id))
             self.get_status(DO_NOTHING, ctx={'origin': 'refresh'}, ignore_cache=True)
-
 
     def _check_success(self):
         self.device_status = "up"
@@ -159,6 +180,7 @@ class Device(EventEmitter):
 #                print("======== DEVICE {} IS DOWN".format(self.id))
 
 
+# This collector stacks all calls for gets on the same device and serves them all at once from the first returning call
 @contextmanager
 def status_collector(scope, callback, get=True):
     if not scope.hold_get_status:

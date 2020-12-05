@@ -42,7 +42,7 @@ def format_notification(message, config={}):
     template += ' '
 
     # User
-    if origin in ('online', 'refresh') or origin.startswith('refresh.'):
+    if origin in ('online', 'refresh', 'request') or origin.startswith('refresh.'):
         template += config.get('text_by_system', 'by the system').encode('utf-8')
     elif origin == 'set':
         template += 'por _{}_ '.format(ucfirst(message.ctx.user) or config.get('text_unknown', 'Unknown').encode('utf-8'))

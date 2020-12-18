@@ -17,7 +17,7 @@ from ..util import debug, DO_NOTHING
 
 
 class AsyncSocketClient(EventEmitter):
-    def __init__(self, buf_size=1024):
+    def __init__(self, ttl=None):
         EventEmitter.__init__(self)
         self.fd = None
         self.ip = None
@@ -28,7 +28,8 @@ class AsyncSocketClient(EventEmitter):
         self.connecting = False
         self.error = None
         self.buffer = bytearray()
-        pass
+        self.ttl = ttl
+        self.ttl_timeout = None
 
     # Connects
     def connect(self, ip, port, timeout=None):
@@ -58,6 +59,10 @@ class AsyncSocketClient(EventEmitter):
             self.timeout = set_timeout(lambda: self._on_failure({'error': 'timeout'}), timeout)
 
     def disconnect(self):
+        if self.ttl_timeout is not None:
+            cancel_timeout(self.ttl_timeout)
+            self.ttl_timeout = None
+
         if self.connected:
             self.connected = False
             debug("DBUG", "Closing connecting socket to {}:{} (fd: {})".format(self.ip, self.port, self.fd))
@@ -80,7 +85,13 @@ class AsyncSocketClient(EventEmitter):
             cancel_timeout(self.timeout)
         self.connecting = False
         self.connected = True
+        if self.ttl is not None:
+            self.ttl_timeout = set_timeout(self._on_ttl_expire, self.ttl)
         self.emit('connect')
+
+    def _on_ttl_expire(self):
+        debug("INFO", "Connection to {}:{} TTL {} expired".format(self.ip, self.port, self.ttl))
+        self.disconnect()
 
     def _on_failure(self, ex):
         debug("ERRO", "Error connecting to {}:{}".format(self.ip, self.port), ex)

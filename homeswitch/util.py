@@ -2,6 +2,7 @@ import binascii
 import struct
 from datetime import datetime
 import traceback
+import sys
 
 
 def bin2hex(data):
@@ -49,6 +50,7 @@ def debug(type, pattern, *args):
     values.extend(args)
     values.insert(0, str(datetime.utcnow())+'Z')
     print(pattern.format(*values))
+    sys.stdout.flush()
 
 
 def dump(type, data):

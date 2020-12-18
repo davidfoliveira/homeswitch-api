@@ -46,7 +46,7 @@ class TuyaDevice(EventEmitter):
         self.get_status_on_start = config.get('get_status_on_start', True)
 
         # Creates the connection object and sets event handlers
-        self.connection = AsyncSocketClient()
+        self.connection = AsyncSocketClient(ttl=config.get('socket_ttl', 300))
         self.connection.on('connect', self._on_dev_connect)
         self.connection.on('failure', self._on_dev_connection_failure)
         self.connection.on('timeout', self._on_dev_connection_failure)

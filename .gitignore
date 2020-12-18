@@ -5,3 +5,4 @@ conf/hshookd.json
 *.pyc
 packages/*
 data/*
+tmp/*

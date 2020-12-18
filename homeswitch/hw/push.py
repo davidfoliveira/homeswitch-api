@@ -2,6 +2,7 @@ from pymitter import EventEmitter
 
 from ..asyncorepp import set_timeout, cancel_timeout
 from ..util import debug, DO_NOTHING
+from ..valueops import apply_ops
 
 
 class PushDevice(EventEmitter):
@@ -25,6 +26,11 @@ class PushDevice(EventEmitter):
             cancel_timeout(self._timeout_expect_new_status)
 
         status_before = self.status
+
+        # Convert value
+        if 'convert' in self.config:
+            value = apply_ops(value, self.config.get('convert'))
+
         self.status = value
         callback(None, value)
         ctx['origin'] = 'put'

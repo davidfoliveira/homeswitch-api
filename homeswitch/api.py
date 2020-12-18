@@ -12,12 +12,13 @@ from .util import debug
 
 
 class HomeSwitchAPI(object):
-    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, hooks_server={}, requires_id=False):
+    def __init__(self, host='0.0.0.0', port=7776, debug=False, devices={}, clients={}, hooks_server={}, requires_id=False):
         self.host = host
         self.port = port
         self.debug = debug
         self.server = HybridServer(host=host, port=port)
         self.running = True
+        self.clients = clients
         self.devices = devices
         self.hooks_client = HooksClient(hooks_server) if hooks_server else None
         self.requires_id = requires_id
@@ -72,8 +73,8 @@ class HomeSwitchAPI(object):
             return self.on_hs_request(client, req, error)
 
     def _request_has_valid_auth(self, client, req):
-        user = req.get_user()
-        return user is not None
+        client_id = req.get_client()
+        return client_id is not None and isinstance(client_id, basestring) and client_id in self.clients
 
     def on_hs_request(self, client, req, error):
         try:

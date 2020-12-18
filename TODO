@@ -1,6 +1,6 @@
  # TODO
 
-Needs:
+Needs
 - Support for expirable queues (items with expire time) - this will help the syncproto and future session support
 - Implement session support for hooks API
 - Implement hsclockd with session support
@@ -22,7 +22,6 @@ Improvements:
 - Implement session support for users (queuing updates for a little while)
 - Think on how to update hooks and scheduling configuration via API
 - Detect and log infinite loops on read and/or write and make them stop
-- Get and log client_id (web, device, etc...)
 - Notify multiple device status changes in one message when they happen at the same time
 - Authorization
 	- User permission settings and validation

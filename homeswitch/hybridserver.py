@@ -65,14 +65,20 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         self.proto = None
         self.status = "alive"
         self.processing = False
+        self.client_id = None
+        self.session_id = None
         asyncore.dispatcher_with_send.__init__(self, sock)
         EventEmitter.__init__(self)
         # Proxy 'request' event to 
         self.on('request', self.process_request)
 
     def process_request(self, request, error):
-        if self.proto == None:
+        if self.proto is None:
             self.proto = request.proto
+        if self.session_id is None:
+            self.session_id = request.get_session()
+        if self.client_id is None:
+            self.client_id = request.get_client()
         self.server.emit('request', self, request, error)
         self.processing = True
 
@@ -96,7 +102,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
                 break
             if not self.request or self.request.is_ready:
                 # Create a request object
-                self.request = HomeSwitchRequest() if ord(data[0]) == 3 else HTTPRequest()
+                self.request = HomeSwitchRequest(parent=self) if ord(data[0]) == 3 else HTTPRequest(parent=self)
                 self.request.on('ready', lambda: self.emit('request', self.request, None))
                 self.request.on('error', lambda description: self.emit('request', self.request, description))
             used_data = self.request.push_data(data)
@@ -130,7 +136,8 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
         proto = "HTTP" if self.proto == "http" else "HS"
         status = "error/"+body.get('error') if body.get('error', None) else 'ok'
         user = self.request.get_user() if self.request.get_user() else 'unidentified'
-        debug("INFO", "[Client {}] {}/{} => {}; by {}".format(self.id, proto, self.request, status, user))
+        client_id = self.request.get_client() if self.request.get_client() else 'unknown-client'
+        debug("INFO", "[Client {}] {}/{} => {}; by {} via {}".format(self.id, proto, self.request, status, user, client_id))
         body['when'] = time.time() * 1000
         if self.proto == 3:
             self.send_hs(body)
@@ -174,7 +181,7 @@ class HybridServerClient(asyncore.dispatcher_with_send, EventEmitter):
 
 
 class HomeSwitchRequest(EventEmitter):
-    def __init__(self, raw_request=None):
+    def __init__(self, raw_request=None, parent=None):
         super(HomeSwitchRequest, self).__init__()
         self.raw_request = ""
         self.headers = None
@@ -183,6 +190,8 @@ class HomeSwitchRequest(EventEmitter):
         self.size = None
         self.is_ready = False
         self.body = None
+        self.client_id = parent.client_id if parent else None
+        self.session_id = parent.session_id if parent else None
         self.method = None
         self._raw_body = ""
         self._eating_stage = "need_header"
@@ -207,7 +216,6 @@ class HomeSwitchRequest(EventEmitter):
                 total_data_used += self._eat_body(self.raw_request)
                 self.raw_request = ""
         return total_data_used
-
 
     def _eat_header(self, data):
         header = readUInt32BE(data, 0)
@@ -239,17 +247,25 @@ class HomeSwitchRequest(EventEmitter):
     def get_user(self):
         return self.body.get('user', None)
 
+    def get_session(self):
+        return self.session_id or self.body.get('session', None)
+
+    def get_client(self):
+        return self.client_id or self.body.get('client', None)
+
     def get_ctx(self):
         if self._ctx is None:
             self._ctx = {
                 'origin': 'request', # default origin
+                'via': self.get_client(),
+                'session': self.get_session(),
                 'user': self.get_user(),
             }
         return self._ctx
 
 
 class HTTPRequest(EventEmitter):
-    def __init__(self, method=None, url=None, http_version=None, headers=None, raw_request=None):
+    def __init__(self, method=None, url=None, http_version=None, headers=None, raw_request=None, parent=None):
         super(HTTPRequest, self).__init__()
         self.id = None
         self.proto = "http"
@@ -331,6 +347,9 @@ class HTTPRequest(EventEmitter):
         return "{} {}".format(self.method, self.url)
 
     def get_user(self):
+        return self.headers.get('from')
+
+    def get_client(self):
         if self.headers.get('authorization', None):
             try:
                 auth = base64.b64decode(re.sub(r'^basic +', '', self.headers.get('authorization'), flags=re.I))
@@ -338,10 +357,15 @@ class HTTPRequest(EventEmitter):
             except Exception as e:
                 return None
 
+    def get_session(self):
+        return None
+
     def get_ctx(self):
         if self._ctx is None:
             self._ctx = {
                 'origin': 'request', # default origin
+                'via': self.get_client(),
+                'session': self.get_session(),
                 'user': self.get_user(),
             }
         return self._ctx
